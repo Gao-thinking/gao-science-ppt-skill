@@ -113,11 +113,90 @@ def apply_sizes(prs, size_map):
                     run.font.size = Pt(smap[run.font.size.pt])
 
 
+def apply_text_replace(prs, spec):
+    """按页号替换段落文本（段落级拼接匹配，兼容一段拆多 run）。
+    spec: {"<页号>": [{"old": ..., "new": ..., "mode": "exact|contains|startswith"}]}
+    保留首 run 格式，其余 run 清空。"""
+    for slide_idx, rules in spec.items():
+        slide = prs.slides[int(slide_idx) - 1]
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for para in shape.text_frame.paragraphs:
+                full = "".join(r.text for r in para.runs)
+                for rule in rules:
+                    old, new = rule["old"], rule["new"]
+                    mode = rule.get("mode", "contains")
+                    if mode == "exact":
+                        hit = full == old
+                    elif mode == "startswith":
+                        hit = full.startswith(old)
+                    else:
+                        hit = old in full
+                    if hit:
+                        if mode == "exact":
+                            full = new
+                        elif mode == "startswith":
+                            full = new + full[len(old):]
+                        else:
+                            full = full.replace(old, new, 1)
+                        if para.runs:
+                            para.runs[0].text = full
+                            for r in para.runs[1:]:
+                                r.text = ""
+                        break
+
+
+def apply_replace_images(prs, spec):
+    """按页号替换图片内容（保持原位置/尺寸，新图按原图框比例中心裁剪防拉伸）。
+    spec: {"<页号>": [{"pic": <该页第几张图,0-based>, "path": "新图路径"}]}"""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        print("[warn] 缺 PIL，图片替换跳过（python3 -m pip install --user Pillow）")
+        return
+    import io
+    for slide_idx, rules in spec.items():
+        slide = prs.slides[int(slide_idx) - 1]
+        pics = [s for s in slide.shapes if s.shape_type == 13]
+        for rule in rules:
+            n, path = rule["pic"], rule["path"]
+            if n >= len(pics) or not os.path.exists(path):
+                continue
+            pic = pics[n]
+            try:
+                # 目标比例 = 原图框比例
+                target_ratio = (pic.width / pic.height) if pic.height else 1.0
+                im = Image.open(path)
+                im = ImageOps.exif_transpose(im).convert("RGB")
+                w, h = im.size
+                cur_ratio = w / h
+                if cur_ratio > target_ratio + 0.01:   # 太宽 → 裁左右
+                    nw = int(h * target_ratio)
+                    x0 = (w - nw) // 2
+                    im = im.crop((x0, 0, x0 + nw, h))
+                elif cur_ratio < target_ratio - 0.01:  # 太高 → 裁上下
+                    nh = int(w / target_ratio)
+                    y0 = (h - nh) // 2
+                    im = im.crop((0, y0, w, y0 + nh))
+                buf = io.BytesIO()
+                im.save(buf, format="JPEG", quality=88)
+                tmp = "/tmp/ppt-assets/_tmp_repl.jpg"
+                with open(tmp, "wb") as f:
+                    f.write(buf.getvalue())
+                image_part, rId = slide.part.get_or_add_image_part(tmp)
+                blip = pic._element.blipFill.blip
+                blip.set(qn("r:embed"), rId)
+            except Exception as e:
+                print(f"[warn] 页{slide_idx} 图{n} 替换失败: {e}")
+
+
 def apply_images(prs, cfg):
     mode = cfg.get("mode", "equal_width")
     if mode == "none":
         return
     width_in = cfg.get("width_in", 5.5)
+    pages = cfg.get("pages")  # 限定页号列表(1-based)，缺省=全部
     ratio_spec = cfg.get("ratio", "4:3")
     try:
         rw, rh = (float(x) for x in ratio_spec.split(":"))
@@ -125,7 +204,9 @@ def apply_images(prs, cfg):
     except Exception:
         target_ratio = 4 / 3
     slide_w = prs.slide_width  # EMU
-    for slide in prs.slides:
+    for idx, slide in enumerate(prs.slides, 1):
+        if pages and idx not in pages:
+            continue
         pics = [s for s in slide.shapes if s.shape_type == 13]
         if not pics:
             continue
@@ -234,6 +315,10 @@ def main():
 
     if plan.get("titles"):
         apply_titles(prs, plan["titles"])
+    if plan.get("text_replace"):
+        apply_text_replace(prs, plan["text_replace"])
+    if plan.get("replace_images"):
+        apply_replace_images(prs, plan["replace_images"])
     if plan.get("fonts"):
         apply_fonts(prs, plan["fonts"])
     if plan.get("size_map"):

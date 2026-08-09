@@ -56,7 +56,7 @@ description: >
 | 项 | 说明 |
 |----|------|
 | 输入 | 1-N 份 `.pptx` 课件（`.ppt` 先经 Office/LibreOffice 转 `.pptx`） |
-| 输出 | `{原名}-优化.pptx`（同目录副本，不覆盖原件）+ `{原名}-诊断.json`（诊断报告） |
+| 输出 | `{原名}-优化.pptx`（副本，默认同目录，可用 `-o` 指定输出目录，不覆盖原件）+ `{原名}-诊断.json`（诊断报告） |
 | 设计偏好（可选） | 用户给字体/配色/学校模板要求 → 以用户为准；不给 → 用 §1.1 默认 |
 
 ---
@@ -143,7 +143,18 @@ python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
   --plan /tmp/ppt-diag/{name}-方案.json 2>&1
 ```
 
-方案 JSON 由 AI 按 §1.1 生成：标题重写映射、字体替换表、字号统一、图片对齐规则。脚本机械执行，**只改排版不改文字事实**。
+方案 JSON 由 AI 按 §1.1 生成，字段：
+
+| 字段 | 作用 |
+|------|------|
+| `titles` | `{"<页号>": "<新标题>"}` 按页替换该页最大字号文本（引导页/章节文字） |
+| `text_replace` | `{"<页号>": [{"old","new","mode":"exact\|contains\|startswith"}]}` 段落级替换（兼容一段拆多 run），用于重写导入文字 |
+| `replace_images` | `{"<页号>": [{"pic": <该页第几张图,0-based>, "path": "新图"}]}` 替换配图，新图按原图框比例中心裁剪防拉伸 |
+| `fonts` | `{"latin": "Calibri", "ea": "微软雅黑"}` 中英分离统一字体 |
+| `size_map` | `{"旧pt": 新pt}` 字号统一（用户偏好按原页格式时省略） |
+| `images` | `{"mode","width_in","ratio","align","border","pages"}` 图片布局统一；`pages` 限定页号列表（缺省=全部） |
+
+脚本机械执行，**只改排版不改文字事实**（`text_replace` 是用户明确要求的文字重写例外，重写内容必须从课件既有信息推导）。
 
 ### Step 5: 教学设计填充 ⬜（第 3 次打断）
 
@@ -189,10 +200,12 @@ python3 -m pip install --user python-pptx
 # 诊断：提取每页标题/字体/字号/图片/文字量 → JSON + 可读摘要
 python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_analyze.py -i deck.pptx -o /tmp/ppt-diag/
 
-# 应用：按方案 JSON 执行标题/字体/图片统一 + 可选教学设计页
+# 应用：按方案 JSON 执行标题/字体/图片统一 + 可选教学设计页（-o 可指定输出目录）
 python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
-  -i deck.pptx -o deck-优化.pptx --plan plan.json [--append-teaching teaching.json]
+  -i deck.pptx -o output/deck-优化.pptx --plan plan.json [--append-teaching teaching.json]
 ```
+
+plan.json 字段见 §3 Step 4 表；配图素材可从 pexels 下载（直链 `https://images.pexels.com/photos/{id}/pexels-photo-{id}.jpeg?auto=compress&cs=tinysrgb&w=1260`，免费商用），替换时脚本自动按原图框比例中心裁剪。
 
 ### A3 诊断字段说明
 
@@ -209,6 +222,9 @@ page_type: cover / section / content / exercise / summary（启发式）
 - **公式（OMML）文本**：python-pptx 读不到公式内文字，诊断中公式页文字量偏低属正常，不据此判"空页"
 - **主题字体**：字体可能来自主题（run.font.name 为空）→ 诊断标 `theme`，统一时按主题字体映射处理
 - **热更新被本地改动挡住**：本地有未提交改动时自动 pull 会跳过（按设计），交付总结里提示即可；`git stash` 后可手动拉取
+- **pexels 图替换后拉伸变形**：新图比例与图框不同直接替换会拉伸 → 脚本已按原图框比例中心裁剪；个别图裁后主体偏离中心，改用 `himalaya-peaks` 等竖版素材或换图源（pixabay/google 亦可）
+- **课件残留上一节引导页/目录**：浙教版课件常见模板残留（如"第3节 电路中的电能"混入第4节课件）→ 诊断时核对引导页文字与封面节标题是否一致，不一致列入必改（`titles` 按页替换）
+- **字号偏好**：用户可能只要统一字体、字号保持原页格式（打断1 问清，`size_map` 省略即可）
 
 ### A5 元规则
 
