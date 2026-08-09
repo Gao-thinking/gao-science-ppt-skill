@@ -158,7 +158,7 @@ def apply_replace_images(prs, spec):
     import io
     for slide_idx, rules in spec.items():
         slide = prs.slides[int(slide_idx) - 1]
-        pics = [s for s in slide.shapes if s.shape_type == 13]
+        pics = _collect_pics(list(slide.shapes), [])
         for rule in rules:
             n, path = rule["pic"], rule["path"]
             if n >= len(pics) or not os.path.exists(path):

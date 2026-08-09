@@ -149,7 +149,7 @@ python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
 |------|------|
 | `titles` | `{"<页号>": "<新标题>"}` 按页替换该页最大字号文本（引导页/章节文字） |
 | `text_replace` | `{"<页号>": [{"old","new","mode":"exact\|contains\|startswith"}]}` 段落级替换（兼容一段拆多 run），用于重写导入文字 |
-| `replace_images` | `{"<页号>": [{"pic": <该页第几张图,0-based>, "path": "新图"}]}` 替换配图，新图按原图框比例中心裁剪防拉伸 |
+| `replace_images` | `{"<页号>": [{"pic": <该页第几张图,0-based>, "path": "新图"}]}` 替换配图，新图按原图框比例中心裁剪防拉伸；**递归处理 GROUP 内嵌图片**（目录/装饰图常组合内） |
 | `round_rect` | `{"pages": [1-based] 缺省=全部, "skip": [页号], "adj": "val 6060", "shadow": true}` 统一图片为圆角矩形（参考页2 左图样式：roundRect + 外阴影），递归处理 GROUP 内嵌图片 |
 | `layout_images` | `{"<页号>": [{"pic": n, "left_in": x, "top_in": y, "width_in": w, "height_in": h}]}` 设置图片位置/尺寸（封面四图适配、目录左图调整），只改出现的字段，单位英寸，递归处理 GROUP 内嵌 |
 | `fonts` | `{"latin": "Calibri", "ea": "微软雅黑"}` 中英分离统一字体 |
@@ -229,6 +229,7 @@ page_type: cover / section / content / exercise / summary（启发式）
 - **字号偏好**：用户可能只要统一字体、字号保持原页格式（打断1 问清，`size_map` 省略即可）
 - **封面椭圆小图与 GROUP 内嵌图片**：封面小图常为 `ellipse` 几何、目录/装饰图常嵌在 GROUP 组合内 → `round_rect`/`layout_images`/`replace_images` 均递归处理；封面四图常见偏好「大图主视觉（底部/右侧满宽）+ 小图左上角成排、尺寸一致」，打断时给此推荐项
 - **圆角样式参考页2 左图**：正文图片统一圆角时以导入页左图为参考（roundRect + `adj 6060` + outerShdw 阴影），范围默认仅正文页、封面保持各自样式（打断确认）
+- **组合内图片替换失败**：`apply_replace_images` 早期只遍历顶层 shapes，页5 目录左图等嵌在 GROUP 内的图片会被静默跳过（blob 哈希不变）→ 已改 `_collect_pics` 递归；验证时必须核对替换后 blob 哈希/尺寸变化，不能只看"已保存"
 
 ### A5 元规则
 
