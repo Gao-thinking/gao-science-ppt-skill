@@ -230,6 +230,9 @@ page_type: cover / section / content / exercise / summary（启发式）
 - **封面椭圆小图与 GROUP 内嵌图片**：封面小图常为 `ellipse` 几何、目录/装饰图常嵌在 GROUP 组合内 → `round_rect`/`layout_images`/`replace_images` 均递归处理；封面四图常见偏好「大图主视觉（底部/右侧满宽）+ 小图左上角成排、尺寸一致」，打断时给此推荐项
 - **圆角样式参考页2 左图**：正文图片统一圆角时以导入页左图为参考（roundRect + `adj 6060` + outerShdw 阴影），范围默认仅正文页、封面保持各自样式（打断确认）
 - **组合内图片替换失败**：`apply_replace_images` 早期只遍历顶层 shapes，页5 目录左图等嵌在 GROUP 内的图片会被静默跳过（blob 哈希不变）→ 已改 `_collect_pics` 递归；验证时必须核对替换后 blob 哈希/尺寸变化，不能只看"已保存"
+- **PowerPoint 打开报 repair（rPr 乱序）**：直接 append `a:ea`/`a:cs` 到 rPr 末尾会破坏 `latin→ea→cs→sym` 的 schema 顺序，Office 严格校验 → 必须按锚点插入（latin 后 addnext，或 sym/hlink 前 addprevious）；**验证时必须解压跑 XML 元素顺序检查**（rPr/spPr 顺序），不能只依赖 LibreOffice 转换
+- **round_rect 只改方形图**：统一圆角矩形仅针对原本 `prstGeom="rect"` 的图片；原本 `ellipse`（圆形）/`roundRect`（已圆角）的保持原样，避免把圆图改方（用户明确要求）
+- **替换配图须贴切页内容**：导入页讲"太阳核聚变产生核能"→ 配太阳竖图而非核电站；替换前先读该页文字定主题，打断时给主题选项
 
 ### A5 元规则
 

@@ -37,17 +37,39 @@ DARK = RGBColor(0x33, 0x33, 0x33)
 
 
 def set_run_fonts(run, latin=None, ea=None):
-    """同时设置 latin(西文) 与 ea(中文) 字体。"""
+    """同时设置 latin(西文) 与 ea(中文) 字体，按 OOXML schema 顺序插入
+    (latin → ea → cs → sym)，避免 rPr 子元素乱序导致 PowerPoint 报 repair。"""
     if latin:
         run.font.name = latin
     if ea:
         rPr = run._r.get_or_add_rPr()
+        # 先移除旧 ea/cs，避免重复
         for tag in (qn("a:ea"), qn("a:cs")):
             el = rPr.find(tag)
-            if el is None:
-                el = rPr.makeelement(tag, {})
-                rPr.append(el)
-            el.set("typeface", ea)
+            if el is not None:
+                rPr.remove(el)
+        ea_el = rPr.makeelement(qn("a:ea"), {"typeface": ea})
+        cs_el = rPr.makeelement(qn("a:cs"), {"typeface": ea})
+        latin_el = rPr.find(qn("a:latin"))
+        if latin_el is not None:
+            # latin → ea → cs
+            latin_el.addnext(cs_el)
+            latin_el.addnext(ea_el)
+        else:
+            # 无 latin：插到 sym/hlinkClick/hlinkMouseOver/rtl/extLst 之前
+            anchor = None
+            for tag in (qn("a:sym"), qn("a:hlinkClick"), qn("a:hlinkMouseOver"),
+                        qn("a:rtl"), qn("a:extLst")):
+                el = rPr.find(tag)
+                if el is not None:
+                    anchor = el
+                    break
+            if anchor is not None:
+                anchor.addprevious(cs_el)
+                anchor.addprevious(ea_el)
+            else:
+                rPr.append(ea_el)
+                rPr.append(cs_el)
 
 
 def iter_runs(shape):
@@ -231,7 +253,8 @@ def set_round_rect(pic, adj="val 6060", shadow=True):
 
 
 def apply_round_rect(prs, cfg):
-    """正文图片统一圆角矩形样式。
+    """正文图片统一圆角矩形样式——**仅针对原本就是方形(rect)的图片**，
+    原本是圆形(ellipse)/已圆角(roundRect)的保持原样，避免把圆图改方。
     cfg: {"pages": [1-based] 缺省=全部, "skip": [页号], "adj": "val 6060", "shadow": true}"""
     pages = cfg.get("pages")
     skip = set(cfg.get("skip", []))
@@ -243,7 +266,11 @@ def apply_round_rect(prs, cfg):
         if idx in skip:
             continue
         for pic in _collect_pics(list(slide.shapes), []):
-            set_round_rect(pic, adj, shadow)
+            spPr = pic._element.spPr
+            prst = spPr.find(qn("a:prstGeom"))
+            geom = prst.get("prst") if prst is not None else None
+            if geom == "rect":  # 只有方形图片才改圆角
+                set_round_rect(pic, adj, shadow)
 
 
 def apply_layout_images(prs, spec):
