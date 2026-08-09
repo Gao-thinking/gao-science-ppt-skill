@@ -135,6 +135,62 @@ def apply_sizes(prs, size_map):
                     run.font.size = Pt(smap[run.font.size.pt])
 
 
+def apply_table_replace(prs, spec):
+    """按页号+行列替换表格单元格文本（保留单元格格式）。
+    spec: {"<页号>": [{"row": r, "col": c, "text": "..."}]}
+    或 items 形式保持「序号金色 + 内容白色」结构：
+    {"<页号>": [{"row": r, "col": c, "items": [{"num": "1.", "text": "..."}, {"num": "2.", "text": "..."}]}]}
+    items 时：每段首 run 保留序号（金色），第二 run 写内容（保留原白色），多余 run/段落清空。"""
+    for slide_idx, rules in spec.items():
+        slide = prs.slides[int(slide_idx) - 1]
+        for shape in slide.shapes:
+            if not getattr(shape, "has_table", False):
+                continue
+            tbl = shape.table
+            for rule in rules:
+                r, c = rule["row"], rule["col"]
+                if r >= len(tbl.rows) or c >= len(tbl.columns):
+                    continue
+                cell = tbl.cell(r, c)
+                tf = cell.text_frame
+                items = rule.get("items")
+                if items:
+                    for pi, item in enumerate(items):
+                        para = tf.paragraphs[pi] if pi < len(tf.paragraphs) else tf.add_paragraph()
+                        runs = para.runs
+                        if not runs:
+                            runs = [para.add_run()]
+                        if isinstance(item, dict) and "num" in item:
+                            # 序号 run：保留原格式（金色）
+                            runs[0].text = item["num"]
+                            content = item["text"]
+                            if len(runs) > 1:
+                                runs[1].text = content
+                                for extra in runs[2:]:
+                                    extra.text = ""
+                            else:
+                                r2 = para.add_run()
+                                r2.text = content
+                        else:
+                            txt = item["text"] if isinstance(item, dict) else item
+                            runs[0].text = txt
+                            for extra in runs[1:]:
+                                extra.text = ""
+                    # 清掉多余段落
+                    for extra_p in tf.paragraphs[len(items):]:
+                        for run in extra_p.runs:
+                            run.text = ""
+                else:
+                    text = rule["text"]
+                    if tf.paragraphs and tf.paragraphs[0].runs:
+                        tf.paragraphs[0].runs[0].text = text
+                        for para in tf.paragraphs:
+                            for run in para.runs[1:]:
+                                run.text = ""
+                    else:
+                        tf.text = text
+
+
 def apply_text_replace(prs, spec):
     """按页号替换段落文本（段落级拼接匹配，兼容一段拆多 run）。
     spec: {"<页号>": [{"old": ..., "new": ..., "mode": "exact|contains|startswith"}]}
@@ -421,6 +477,8 @@ def main():
         apply_titles(prs, plan["titles"])
     if plan.get("text_replace"):
         apply_text_replace(prs, plan["text_replace"])
+    if plan.get("table_replace"):
+        apply_table_replace(prs, plan["table_replace"])
     if plan.get("replace_images"):
         apply_replace_images(prs, plan["replace_images"])
     if plan.get("round_rect"):

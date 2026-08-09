@@ -149,6 +149,7 @@ python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
 |------|------|
 | `titles` | `{"<页号>": "<新标题>"}` 按页替换该页最大字号文本（引导页/章节文字） |
 | `text_replace` | `{"<页号>": [{"old","new","mode":"exact\|contains\|startswith"}]}` 段落级替换（兼容一段拆多 run），用于重写导入文字 |
+| `table_replace` | `{"<页号>": [{"row","col","text"}]}` 或 items 形式 `{"row","col","items":[{"num":"1.","text":"…"}]}` 替换表格单元格（学习目标/重点难点页），items 保持「序号金色+内容白色」run 级格式 |
 | `replace_images` | `{"<页号>": [{"pic": <该页第几张图,0-based>, "path": "新图"}]}` 替换配图，新图按原图框比例中心裁剪防拉伸；**递归处理 GROUP 内嵌图片**（目录/装饰图常组合内） |
 | `round_rect` | `{"pages": [1-based] 缺省=全部, "skip": [页号], "adj": "val 6060", "shadow": true}` 统一图片为圆角矩形（参考页2 左图样式：roundRect + 外阴影），递归处理 GROUP 内嵌图片 |
 | `layout_images` | `{"<页号>": [{"pic": n, "left_in": x, "top_in": y, "width_in": w, "height_in": h}]}` 设置图片位置/尺寸（封面四图适配、目录左图调整），只改出现的字段，单位英寸，递归处理 GROUP 内嵌 |
@@ -233,6 +234,8 @@ page_type: cover / section / content / exercise / summary（启发式）
 - **PowerPoint 打开报 repair（rPr 乱序）**：直接 append `a:ea`/`a:cs` 到 rPr 末尾会破坏 `latin→ea→cs→sym` 的 schema 顺序，Office 严格校验 → 必须按锚点插入（latin 后 addnext，或 sym/hlink 前 addprevious）；**验证时必须解压跑 XML 元素顺序检查**（rPr/spPr 顺序），不能只依赖 LibreOffice 转换
 - **round_rect 只改方形图**：统一圆角矩形仅针对原本 `prstGeom="rect"` 的图片；原本 `ellipse`（圆形）/`roundRect`（已圆角）的保持原样，避免把圆图改方（用户明确要求）
 - **替换配图须贴切页内容**：导入页讲"太阳核聚变产生核能"→ 配太阳竖图而非核电站；替换前先读该页文字定主题，打断时给主题选项
+- **学习目标/重点难点表格常为上一节残留**：与引导页残留同源，模板复制后表格内容仍是旧课（如第4节课件写焦耳定律）→ 诊断时核对页3/页4 表格内容与本课是否一致，不一致按课件动态重写（科学观念/科学思维/探究实践/态度责任 四维 + 重点/难点）
+- **表格替换须保持 run 级格式**：单元格内"1."序号与内容是两个 run（序号金色、内容白色），整段塞入第一个 run 会破坏颜色 → 用 `table_replace` 的 items 形式（num/text 分离），每段首 run 保留序号格式、第二 run 写内容
 
 ### A5 元规则
 
