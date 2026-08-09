@@ -191,6 +191,83 @@ def apply_replace_images(prs, spec):
                 print(f"[warn] 页{slide_idx} 图{n} 替换失败: {e}")
 
 
+def _collect_pics(shapes, out):
+    """递归收集所有 PICTURE（含 GROUP 内嵌），保持文档顺序。"""
+    for s in shapes:
+        if s.shape_type == 13:
+            out.append(s)
+        elif s.shape_type == 6:  # GROUP
+            _collect_pics(s.shapes, out)
+    return out
+
+
+def set_round_rect(pic, adj="val 6060", shadow=True):
+    """把图片几何改为圆角矩形（参考页2 左图样式: roundRect + adj + 阴影）。"""
+    spPr = pic._element.spPr
+    for tag in ("a:prstGeom", "a:ln", "a:effectLst"):
+        for el in spPr.findall(qn(tag)):
+            spPr.remove(el)
+    geom = spPr.makeelement(qn("a:prstGeom"), {"prst": "roundRect"})
+    avLst = geom.makeelement(qn("a:avLst"), {})
+    gd = avLst.makeelement(qn("a:gd"), {"name": "adj", "fmla": adj})
+    avLst.append(gd)
+    geom.append(avLst)
+    xfrm = spPr.find(qn("a:xfrm"))
+    if xfrm is not None:
+        xfrm.addnext(geom)
+    else:
+        spPr.insert(0, geom)
+    if shadow:
+        eff = spPr.makeelement(qn("a:effectLst"), {})
+        shdw = eff.makeelement(qn("a:outerShdw"), {
+            "blurRad": "292100", "dist": "139700",
+            "dir": "2700000", "algn": "tl", "rotWithShape": "0"})
+        clr = shdw.makeelement(qn("a:srgbClr"), {"val": "333333"})
+        alpha = clr.makeelement(qn("a:alpha"), {"val": "65000"})
+        clr.append(alpha)
+        shdw.append(clr)
+        eff.append(shdw)
+        spPr.append(eff)
+
+
+def apply_round_rect(prs, cfg):
+    """正文图片统一圆角矩形样式。
+    cfg: {"pages": [1-based] 缺省=全部, "skip": [页号], "adj": "val 6060", "shadow": true}"""
+    pages = cfg.get("pages")
+    skip = set(cfg.get("skip", []))
+    adj = cfg.get("adj", "val 6060")
+    shadow = cfg.get("shadow", True)
+    for idx, slide in enumerate(prs.slides, 1):
+        if pages and idx not in pages:
+            continue
+        if idx in skip:
+            continue
+        for pic in _collect_pics(list(slide.shapes), []):
+            set_round_rect(pic, adj, shadow)
+
+
+def apply_layout_images(prs, spec):
+    """按页设置图片位置/尺寸（用于封面四图适配、目录左图调整）。
+    spec: {"<页号>": [{"pic": n, "left_in": x, "top_in": y, "width_in": w, "height_in": h}]}
+    只改出现的字段，单位英寸。"""
+    for slide_idx, rules in spec.items():
+        slide = prs.slides[int(slide_idx) - 1]
+        pics = _collect_pics(list(slide.shapes), [])
+        for rule in rules:
+            n = rule["pic"]
+            if n >= len(pics):
+                continue
+            p = pics[n]
+            if "left_in" in rule:
+                p.left = Inches(rule["left_in"])
+            if "top_in" in rule:
+                p.top = Inches(rule["top_in"])
+            if "width_in" in rule:
+                p.width = Inches(rule["width_in"])
+            if "height_in" in rule:
+                p.height = Inches(rule["height_in"])
+
+
 def apply_images(prs, cfg):
     mode = cfg.get("mode", "equal_width")
     if mode == "none":
@@ -319,6 +396,10 @@ def main():
         apply_text_replace(prs, plan["text_replace"])
     if plan.get("replace_images"):
         apply_replace_images(prs, plan["replace_images"])
+    if plan.get("round_rect"):
+        apply_round_rect(prs, plan["round_rect"])
+    if plan.get("layout_images"):
+        apply_layout_images(prs, plan["layout_images"])
     if plan.get("fonts"):
         apply_fonts(prs, plan["fonts"])
     if plan.get("size_map"):
