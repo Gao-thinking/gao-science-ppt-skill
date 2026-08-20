@@ -73,11 +73,23 @@ def set_run_fonts(run, latin=None, ea=None):
 
 
 def iter_runs(shape):
-    if not getattr(shape, "has_text_frame", False):
+    """递归收集 run：支持 GROUP 组合内文字与表格单元格文字。
+    用于字体/字号统一，保证不遗漏组合与表格内的 run。"""
+    if shape.shape_type == 6:  # GROUP
+        for child in shape.shapes:
+            yield from iter_runs(child)
         return
-    for para in shape.text_frame.paragraphs:
-        for run in para.runs:
-            yield run
+    if getattr(shape, "has_table", False):
+        for row in shape.table.rows:
+            for cell in row.cells:
+                for para in cell.text_frame.paragraphs:
+                    for run in para.runs:
+                        yield run
+        return
+    if getattr(shape, "has_text_frame", False):
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                yield run
 
 
 def replace_text(shape, new_text):
