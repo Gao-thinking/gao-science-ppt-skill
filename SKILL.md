@@ -316,6 +316,10 @@ page_type: cover / section / content / exercise / summary（启发式）
 - **同章节多课时课件共用模板**：同一节拆成多课时（如"第4节 核能"第1/2课时）时模板相同，前 5 页（封面/导入/学习目标/重难点/目录）配图与导入文字会完全相同 → 诊断时识别课时差异，配图/导入/学习目标按各课时内容（如放射性/裂变聚变 vs 核电站）分别适配，不能复用同一套替换图
 - **四类改造 §3A 新增踩坑**：① `toc` 缺省取"run 数最多"文本框，若命中小字注释框 → 务必按 `shape` 名指定（用脚本 dump 页内 shape 名/位置）；② `para_replace` 是一次一窗的交互确认，改节名残留要逐页核对"左上角角标 + 分隔页 + 目录"三处都要查，不能只改分隔页；③ 无动画页（封面/目录/答案页）**不一定需要补动画**，A-4 报告只做参考，最终处置由用户拍板；④ 动画排查脚本读的是原文件 zip 的 slide XML，若文件被加密/换格式会报错，属正常。
 - **replace_images 依赖 `/tmp/ppt-assets/` 目录**：旧脚本直接把临时图写进 `/tmp/ppt-assets/_tmp_repl.jpg`，目录不存在时静默失败（图没换成、blob 哈希不变）→ 已补 `os.makedirs(..., exist_ok=True)`；验证时必须核对替换后 blob 哈希变化，不能只看"已保存"。
+- **apply_fonts/apply_sizes 曾只处理顶层 shapes**：`iter_runs` 旧实现不递归 GROUP 组合、也不遍历表格，导致组合内标题（节分隔页矩形）与表格文字（学习目标/重难点表）字体/字号未统一，`rPr` 里残留 Times New Roman → 已改 `iter_runs` 递归 GROUP + 表格；**验证字体统一必须解压检查残留 `typeface`（如 Times New Roman），不能只看顶层 shape**。
+- **zipfile 重写必须保留全部条目**：用 `zipfile.ZipFile(f,'w')` 重打包时，若只写入"改动过的"文件而漏掉未改动的（如 slide XML 无变化时未写回），会丢 slide 导致 `python-pptx` 打开报 `KeyError: no relationship with key 'rIdN'` → 所有条目都要写回（改动才换内容，未改动用原 data），写后必须 `unzip -t` 校验包完整性。
+- **教学设计页位置**：默认追加末尾；用户可能要求"分布到已有标题页"（学习目标页放教学目标、重点难点页放重难点+教学环节），此时删除独立教学设计页，改为向目标页追加文本框（保留原页格式）。
+- **配图替换须保持原图框比例**：`replace_images` 已按原图框比例中心裁剪；若原图框比例异常（如横幅 2.6:1），下载素材时优先匹配相近比例（可用 Pexels `w=` 参数或 Wikimedia `iiurlwidth`），避免大幅裁剪丢失主体。
 
 ### A5 元规则
 
