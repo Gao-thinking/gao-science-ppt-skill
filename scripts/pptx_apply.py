@@ -259,7 +259,9 @@ def apply_replace_images(prs, spec):
                     im = im.crop((0, y0, w, y0 + nh))
                 buf = io.BytesIO()
                 im.save(buf, format="JPEG", quality=88)
-                tmp = "/tmp/ppt-assets/_tmp_repl.jpg"
+                tmp_dir = "/tmp/ppt-assets"
+                os.makedirs(tmp_dir, exist_ok=True)
+                tmp = os.path.join(tmp_dir, "_tmp_repl.jpg")
                 with open(tmp, "wb") as f:
                     f.write(buf.getvalue())
                 image_part, rId = slide.part.get_or_add_image_part(tmp)
@@ -453,6 +455,129 @@ def add_teaching_slide(prs, teaching):
             run.font.size = Pt(18)
 
 
+# ---------------------------------------------------------------------------
+# §3.5 四类可复用改造的新 plan 键：toc / para_replace / box
+# ---------------------------------------------------------------------------
+
+def _pick_text_shape(slide):
+    """启发式找一个文本框：优先取 run 数最多（最可能是有编号列表/正文框）。"""
+    best, bestn = None, -1
+    for s in slide.shapes:
+        if not getattr(s, "has_text_frame", False):
+            continue
+        n = sum(1 for p in s.text_frame.paragraphs for _ in p.runs)
+        if n > bestn:
+            best, bestn = s, n
+    return best
+
+
+def apply_toc(prs, spec):
+    """重建/重排目录条目。保留每条目首 run 格式；条目结构：
+    spec: {"<页号>": {"shape": "形状名(可选)", "items": [{"num": "1.", "text": "放射性"}, ...]}}
+    末尾想保留「课堂总结/练习与应用/提升训练」时，把这三条也排进 items 且序号顺延即可。
+    - 若原段落含≥2个 run（常为「序号金色 + 内容白色」），num 写入 run0、text 写入 run1，保持颜色；
+    - 其余情况则整段写入 run0（去掉多余 run）。
+    """
+    for sidx, cfg in spec.items():
+        slide = prs.slides[int(sidx) - 1]
+        shape = None
+        if cfg.get("shape"):
+            shape = next((s for s in slide.shapes if s.name == cfg["shape"]), None)
+        if shape is None:
+            shape = _pick_text_shape(slide)
+        if shape is None or not getattr(shape, "has_text_frame", False):
+            print(f"[warn] toc 页{sidx} 无目标文本框，跳过")
+            continue
+        tf = shape.text_frame
+        paras = tf.paragraphs
+        items = cfg["items"]
+        for p in paras:
+            for r in p.runs:
+                r.text = ""
+        for i, it in enumerate(items):
+            num, text = "", ""
+            if isinstance(it, dict):
+                num, text = it.get("num", ""), it.get("text", "")
+            else:
+                text = str(it)
+            if i < len(paras):
+                p = paras[i]
+                runs = p.runs
+                if runs:
+                    if num and len(runs) >= 2:
+                        runs[0].text = num
+                        runs[1].text = " " + text
+                        for extra in runs[2:]:
+                            extra.text = ""
+                    else:
+                        runs[0].text = (num + " " + text).strip()
+                        for extra in runs[1:]:
+                            extra.text = ""
+                else:
+                    para = p
+                    if not para.runs:
+                        para.add_run()
+                    para.runs[0].text = (num + " " + text).strip()
+            else:
+                p = tf.add_paragraph()
+                p.add_run().text = (num + " " + text).strip()
+        for p in paras[len(items):]:
+            for r in p.runs:
+                r.text = ""
+        print(f"  · toc 页{sidx}: 重排为 {len(items)} 条")
+
+
+def apply_para_replace(prs, spec):
+    """按'包含'匹配整个段落并整段改写（用于节标题残留，如 '第3节电路中的电能' → '第4节核能'）。
+    只替换含关键词的那个段落，保留该段第一个 run 的格式。
+    spec: {"<页号>": [{"contains": "...", "text": "..."}]}
+    """
+    for sidx, rules in spec.items():
+        slide = prs.slides[int(sidx) - 1]
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for para in shape.text_frame.paragraphs:
+                full = "".join(r.text for r in para.runs)
+                for rule in rules:
+                    if rule["contains"] in full:
+                        if not para.runs:
+                            para.add_run()
+                        para.runs[0].text = rule["text"]
+                        for r in para.runs[1:]:
+                            r.text = ""
+                        break
+
+
+def apply_box(prs, spec):
+    """填充/改写一个文本框（用于『导入新课』右侧内容框填课程引导 等）。
+    spec: {"<页号>": {"shape": "形状名(可选，缺省取该页最大/最靠右文本框)",
+                      "text": "...", "mode": "replace|append"}}
+    """
+    for sidx, cfg in spec.items():
+        slide = prs.slides[int(sidx) - 1]
+        shape = None
+        if cfg.get("shape"):
+            shape = next((s for s in slide.shapes if s.name == cfg["shape"]), None)
+        if shape is None:
+            cands = [s for s in slide.shapes
+                     if getattr(s, "has_text_frame", False) and s.left is not None]
+            if not cands:
+                print(f"[warn] box 页{sidx} 无文本框，跳过")
+                continue
+            shape = max(cands, key=lambda s: (s.width * s.height, s.left))
+        if not getattr(shape, "has_text_frame", False):
+            print(f"[warn] box 页{sidx} 目标不是文本框，跳过")
+            continue
+        text = cfg["text"]
+        if cfg.get("mode") == "append":
+            p = shape.text_frame.add_paragraph()
+            if not p.runs:
+                p.add_run()
+            p.runs[0].text = text
+        else:
+            replace_text(shape, text)
+        print(f"  · box 页{sidx}: 已填充文本框")
 def main():
     ap = argparse.ArgumentParser(description="PPTX 排版统一应用")
     ap.add_argument("-i", "--input", required=True, help="输入 .pptx")
@@ -491,6 +616,13 @@ def main():
         apply_sizes(prs, plan["size_map"])
     if plan.get("images"):
         apply_images(prs, plan["images"])
+
+    if plan.get("toc"):
+        apply_toc(prs, plan["toc"])
+    if plan.get("para_replace"):
+        apply_para_replace(prs, plan["para_replace"])
+    if plan.get("box"):
+        apply_box(prs, plan["box"])
 
     teaching = plan.get("teaching")
     if args.append_teaching:

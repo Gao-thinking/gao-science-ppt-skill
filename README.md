@@ -7,6 +7,12 @@
 - **统一字体**：中文/西文分离统一（默认微软雅黑 + Calibri），正文字号统一（默认 20pt）
 - **填充教学设计**：依据课件内容推导教学目标、重难点、教学环节，写入课件末尾新增页
 
+另外提供**四类可复用改造**（§3A，逐项与用户交互确认后执行，方便下次编辑别的课件 PPT）：
+1. **目录 & 各节标题/左上角节名适配**——按封面节名重排目录，正文页角标与节分隔页残留旧节名一并改写；「课堂总结/练习与应用/提升训练」保留在目录末尾并顺延序号
+2. **导入新课右侧引导框填充**——按全课核心内容生成课程引导文案
+3. **配图替换**——封面（第1页多图）/第2页（导入页）/第5页（目录页）按页内容换高清图（Pexels 直链优先，被反爬时自动换 Wikimedia Commons 高清图源）
+4. **动画排查**——逐页输出「无动画页 / 疑似重复动画页」，供课堂播放优化
+
 驱动方法论：**第一性原理 + 贝叶斯原理 + JTBD 理论 + 奥卡姆剃刀原则**（详见 SKILL.md §1）。
 
 ## 使用
@@ -28,11 +34,12 @@ python3 -m pip install --user python-pptx
 
 ```
 gao-science-ppt-skill/
-├── SKILL.md                  # 主规则（工作流/四原理/复盘自升级）
+├── SKILL.md                  # 主规则（工作流/四原理/四类改造/复盘自升级）
 ├── README.md
 └── scripts/
     ├── pptx_analyze.py       # 诊断：标题/字体/字号/图片/文字量 → JSON
-    └── pptx_apply.py         # 应用：标题重写/字体字号统一/图片统一/教学设计页
+    ├── pptx_anim_audit.py    # 动画排查：逐页 无动画/疑似重复/有动画 → JSON
+    └── pptx_apply.py         # 应用：标题/字体/图片统一 + 四类改造 + 教学设计页
 ```
 
 ## 脚本
@@ -41,7 +48,10 @@ gao-science-ppt-skill/
 # 诊断（输出 JSON + 可读摘要）
 python3 scripts/pptx_analyze.py -i deck.pptx -o /tmp/ppt-diag/
 
-# 应用方案（方案 JSON 由 AI 按 SKILL.md §1.1 生成）
+# 动画排查（输出 无动画/重复 逐页报告）
+python3 scripts/pptx_anim_audit.py -i deck.pptx -o /tmp/ppt-diag/
+
+# 应用方案（方案 JSON 由 AI 按 SKILL.md §1.1 / §3A 生成）
 python3 scripts/pptx_apply.py -i deck.pptx -o deck-优化.pptx --plan plan.json
 ```
 
