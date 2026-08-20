@@ -266,7 +266,10 @@ python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_analyze.py -i deck.p
 # 动画排查：逐页 无动画/疑似重复/有动画 → JSON（§3A A-4 用）
 python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_anim_audit.py -i deck.pptx -o /tmp/ppt-diag/
 
-# 应用：按方案 JSON 执行标题/字体/图片统一 + 可选教学设计页（-o 可指定输出目录）
+# 需要按形状名定位时（如 toc/box 指定 shape），先查页内形状名：
+python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_dump_shapes.py -i deck.pptx --pages 1,2,5
+
+# 应用：按方案 JSON 执行标题/字体/图片统一 + 四类改造 + 可选教学设计页（-o 可指定输出目录；示例见 ./examples/plan.example.json）
 python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
   -i deck.pptx -o output/deck-优化.pptx --plan plan.json [--append-teaching teaching.json]
 ```

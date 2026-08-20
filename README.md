@@ -39,6 +39,7 @@ gao-science-ppt-skill/
 └── scripts/
     ├── pptx_analyze.py       # 诊断：标题/字体/字号/图片/文字量 → JSON
     ├── pptx_anim_audit.py    # 动画排查：逐页 无动画/疑似重复/有动画 → JSON
+    ├── pptx_dump_shapes.py   # 辅助：逐页打印 shape 名/位置/文本（toc/box 按名定位用）
     └── pptx_apply.py         # 应用：标题/字体/图片统一 + 四类改造 + 教学设计页
 ```
 
@@ -51,7 +52,10 @@ python3 scripts/pptx_analyze.py -i deck.pptx -o /tmp/ppt-diag/
 # 动画排查（输出 无动画/重复 逐页报告）
 python3 scripts/pptx_anim_audit.py -i deck.pptx -o /tmp/ppt-diag/
 
-# 应用方案（方案 JSON 由 AI 按 SKILL.md §1.1 / §3A 生成）
+# 需要按形状名定位时（如 toc/box 指定 shape），先查页内形状名：
+python3 scripts/pptx_dump_shapes.py -i deck.pptx --pages 1,2,5
+
+# 应用方案（方案 JSON 由 AI 按 SKILL.md §1.1 / §3A 生成；示例见 examples/plan.example.json）
 python3 scripts/pptx_apply.py -i deck.pptx -o deck-优化.pptx --plan plan.json
 ```
 
