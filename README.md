@@ -72,7 +72,7 @@ python3 scripts/pptx_apply.py -i deck.pptx -o deck-优化.pptx --plan plan.json
 
 ## 维护
 
-- 仓库：`Gao-thinking/gao-science-ppt-skill`（public），SKILL.md 与脚本同仓
+- 仓库：`Gao-thinking/gao-science-ppt-skill`（GitHub 上按需设 public/private；如需私有，在 GitHub → Settings → General → Danger Zone 里改为 Private 即可，不改代码）
 - 升级：每次调用后复盘 → 弹窗确认 → 独立 commit + push（SKILL.md §5）
 - 提交邮箱：`293544754+Gao-thinking@users.noreply.github.com`
 
