@@ -92,6 +92,16 @@ def iter_runs(shape):
                 yield run
 
 
+def _set_run_hex_color(run, hexstr):
+    """显式设置 run 文字颜色（hex 如 FFC000）；失败返回 False。"""
+    try:
+        from pptx.dml.color import RGBColor
+        run.font.color.rgb = RGBColor.from_string(hexstr)
+        return True
+    except Exception:
+        return False
+
+
 def replace_text(shape, new_text):
     """把 shape 文本替换为新文本(保留首 run 格式)。"""
     tf = shape.text_frame
@@ -485,9 +495,11 @@ def _pick_text_shape(slide):
 
 def apply_toc(prs, spec):
     """重建/重排目录条目。保留每条目首 run 格式；条目结构：
-    spec: {"<页号>": {"shape": "形状名(可选)", "items": [{"num": "1.", "text": "放射性"}, ...]}}
+    spec: {"<页号>": {"shape": "形状名(可选)", "num_color": "FFC000", "text_color": "FFFFFF",
+                      "items": [{"num": "1.", "text": "放射性"}, ...]}}
+    num_color/text_color: 显式设置序号/概览文字颜色（默认规则：序号黄 FFC000、内容白 FFFFFF）。
     末尾想保留「课堂总结/练习与应用/提升训练」时，把这三条也排进 items 且序号顺延即可。
-    - 若原段落含≥2个 run（常为「序号金色 + 内容白色」），num 写入 run0、text 写入 run1，保持颜色；
+    - 若原段落含≥2个非空 run（常为「序号金色 + 内容白色」），num 写入首 run、text 写入最后一个非空 run，保持颜色；
     - 其余情况则整段写入 run0（去掉多余 run）。
     """
     for sidx, cfg in spec.items():
@@ -503,6 +515,16 @@ def apply_toc(prs, spec):
         tf = shape.text_frame
         paras = tf.paragraphs
         items = cfg["items"]
+        num_color = cfg.get("num_color")
+        text_color = cfg.get("text_color")
+        # 必须在清空前记录每段「最后一个非空 run」的位置，否则清空后全部判空
+        orig_last_ne = []
+        for p in paras:
+            ln = -1
+            for j, r in enumerate(p.runs):
+                if r.text.strip():
+                    ln = j
+            orig_last_ne.append(ln)
         for p in paras:
             for r in p.runs:
                 r.text = ""
@@ -515,18 +537,19 @@ def apply_toc(prs, spec):
             if i < len(paras):
                 p = paras[i]
                 runs = p.runs
-                # 定位最后一个非空 run（真正承载内容的 run），
+                # 使用清空前记录的非空结构（真正承载内容的 run），
                 # 避免把内容写进中间的空格/装饰 run 而继承序号颜色（如金色）
-                last_ne = -1
-                for j, r in enumerate(runs):
-                    if r.text.strip():
-                        last_ne = j
+                last_ne = orig_last_ne[i] if i < len(orig_last_ne) else -1
                 if runs and last_ne >= 1:
                     runs[0].text = num
                     for j, r in enumerate(runs):
                         if j == 0:
                             continue
                         r.text = (" " + text) if j == last_ne else ""
+                    if num_color:
+                        _set_run_hex_color(runs[0], num_color)
+                    if text_color:
+                        _set_run_hex_color(runs[last_ne], text_color)
                 elif runs:
                     runs[0].text = (num + " " + text).strip()
                     for extra in runs[1:]:
@@ -542,7 +565,8 @@ def apply_toc(prs, spec):
         for p in paras[len(items):]:
             for r in p.runs:
                 r.text = ""
-        print(f"  · toc 页{sidx}: 重排为 {len(items)} 条")
+        print(f"  · toc 页{sidx}: 重排为 {len(items)} 条"
+              + (f"（序号{num_color}/文字{text_color}）" if (num_color or text_color) else ""))
 
 
 def apply_para_replace(prs, spec):
@@ -594,8 +618,76 @@ def apply_box(prs, spec):
                 p.add_run()
             p.runs[0].text = text
         else:
-            replace_text(shape, text)
+            lines = str(text).split("\n")
+            replace_text(shape, lines[0])
+            if len(lines) > 1:
+                tf = shape.text_frame
+                src = None
+                if tf.paragraphs[0].runs:
+                    src = tf.paragraphs[0].runs[0]
+                for ln in lines[1:]:
+                    p2 = tf.add_paragraph()
+                    r2 = p2.add_run()
+                    r2.text = ln
+                    if src is not None:
+                        try: r2.font.size = src.font.size
+                        except Exception: pass
+                        try: r2.font.bold = src.font.bold
+                        except Exception: pass
+                        try:
+                            if src.font.color and src.font.color.type is not None:
+                                r2.font.color.rgb = src.font.color.rgb
+                        except Exception: pass
         print(f"  · box 页{sidx}: 已填充文本框")
+def apply_transitions(prs, cfg):
+    """为每页设置切换效果（默认 Morph 平滑）。
+    cfg: {"effect": "morph", "dur": 2000(毫秒), "pages": [1-based 可选，缺省=全部]}
+    - Morph 用 mc:AlternateContent 包裹 p159:morph（PowerPoint 2019+/365 生效），
+      Fallback 为淡入淡出（旧版 PowerPoint / LibreOffice 兼容）；
+    - 写入前先移除页面上已有的 p:transition 与含 transition 的 AlternateContent；
+    - 插入位置遵循 CT_Slide 顺序：cSld → clrMapOvr → transition → timing。"""
+    from lxml import etree
+    P = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+    effect = (cfg or {}).get("effect", "morph")
+    dur = int((cfg or {}).get("dur", 2000))
+    pages = (cfg or {}).get("pages") or []
+    count = 0
+    for idx, slide in enumerate(prs.slides, 1):
+        if pages and idx not in pages:
+            continue
+        sld = slide._element
+        for el in sld.findall(f"{{{P}}}transition"):
+            sld.remove(el)
+        for ac in sld.findall(f"{{{MC}}}AlternateContent"):
+            if ac.find(f".//{{{P}}}transition") is not None:
+                sld.remove(ac)
+        xml = (
+            f'<mc:AlternateContent xmlns:mc="{MC}" xmlns:p="{P}">'
+            f'<mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" Requires="p159">'
+            f'<p:transition xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" spd="slow" p14:dur="{dur}">'
+            f'<p159:morph option="byObject"/>'
+            f'</p:transition></mc:Choice>'
+            f'<mc:Fallback><p:transition spd="slow"><p:fade/></p:transition></mc:Fallback>'
+            f'</mc:AlternateContent>'
+        )
+        el = etree.fromstring(xml)
+        clrMapOvr = sld.find(f"{{{P}}}clrMapOvr")
+        timing = sld.find(f"{{{P}}}timing")
+        if timing is not None:
+            timing.addprevious(el)
+        elif clrMapOvr is not None:
+            clrMapOvr.addnext(el)
+        else:
+            cSld = sld.find(f"{{{P}}}cSld")
+            if cSld is not None:
+                cSld.addnext(el)
+            else:
+                sld.append(el)
+        count += 1
+    print(f"  · transitions: {count} 页 → {effect} ({dur}ms)")
+
+
 def main():
     ap = argparse.ArgumentParser(description="PPTX 排版统一应用")
     ap.add_argument("-i", "--input", required=True, help="输入 .pptx")
@@ -622,6 +714,12 @@ def main():
         apply_text_replace(prs, plan["text_replace"])
     if plan.get("table_replace"):
         apply_table_replace(prs, plan["table_replace"])
+    if plan.get("toc"):
+        apply_toc(prs, plan["toc"])
+    if plan.get("para_replace"):
+        apply_para_replace(prs, plan["para_replace"])
+    if plan.get("box"):
+        apply_box(prs, plan["box"])
     if plan.get("replace_images"):
         apply_replace_images(prs, plan["replace_images"])
     if plan.get("round_rect"):
@@ -634,13 +732,8 @@ def main():
         apply_sizes(prs, plan["size_map"])
     if plan.get("images"):
         apply_images(prs, plan["images"])
-
-    if plan.get("toc"):
-        apply_toc(prs, plan["toc"])
-    if plan.get("para_replace"):
-        apply_para_replace(prs, plan["para_replace"])
-    if plan.get("box"):
-        apply_box(prs, plan["box"])
+    if plan.get("transitions"):
+        apply_transitions(prs, plan["transitions"])
 
     teaching = plan.get("teaching")
     if args.append_teaching:
