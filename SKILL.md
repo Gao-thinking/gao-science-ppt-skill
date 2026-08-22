@@ -1,20 +1,17 @@
----
-name: gao-science-ppt-skill
-description: >
-  科学/物理等理科课件 PPT 排版优化全流程：输入课件 PPTX → 四原理（第一性原理+贝叶斯+JTBD+奥卡姆）驱动 → 内容诊断 → 统一标题/统一图片格式/统一字体 → 依据内容填充教学设计、重难点 → 每次调用后复盘自升级。仅 3 次必打断（目标确认/方案确认/教学设计确认），使用前自动检查更新。
----
-
 # gao-science-ppt-skill
 
-用户说"优化这份课件 PPT / 统一一下标题和字体 / 给这个课件补上教学设计和重难点" → 执行以下流程。**只在 ⬜ 处弹窗**（用 `request_user_input`），其余全部自动完成。
+科学/物理等理科课件 PPT 排版优化全流程：输入课件 PPTX → 四原理（第一性原理+贝叶斯+JTBD+奥卡姆）驱动 → 内容诊断 → 统一标题/图片/字体 → 学习目标/重点难点页按本课内容重写 → 封面/导入/目录配图按课时内容替换（具象壁纸级）+ 导入文案适配 + 目录黄序号白文字 + 全片 Morph 过渡 → 每次调用后复盘自升级。仅 3 次必打断（目标确认/方案确认/教学设计确认），使用前自动检查更新。
+
+用户说"优化这份课件 PPT / 统一一下标题和字体 / 给这个课件补上学习目标重难点" → 执行以下流程。**只在 ⬜ 处弹窗**（用 `request_user_input`），其余全部自动完成。
+
+**架构（2026-08 四次升级）：零脚本。所有 PPT 操作 = 会话内直接运行 python-pptx 内联代码，代码模式全部内置在 §6 模式库，不编写、不依赖、不维护任何 .py 脚本文件。**
 
 ## TL;DR（老手速查）
 
 ```
-自动热更新(静默) → 需求确认[打断1] → 内容诊断(脚本) → 方案确认[打断2]
-→ 执行统一(标题/图片/字体 + 目录配色 + 封面/导入/目录配图替换 + 导入文案适配 + 全片Morph)
+自动热更新(静默) → 需求确认[打断1] → 内容诊断(M1内联) → 方案确认[打断2]
+→ 执行统一(M2-M9内联：字体/目录配色/残留改写/表格重写/配图裁剪替换/删小图/Morph)
 → 教学设计填充[打断3]（原位替换学习目标/重点难点页文字）→ 交付(不覆盖原件)
-→ [可选] 四类可复用改造(目录/节名·动画排查等按需，见 §3A，逐项交互)
 → 复盘自升级(有升级项才弹窗)
 ```
 
@@ -22,12 +19,12 @@ description: >
 
 | 项 | 要求 | 缺失处理 |
 |----|------|----------|
-| python3 | ≥3.9，含 `python-pptx` | `python3 -m pip install --user python-pptx` |
-| git | 任意版本 | `brew install git` |
-| 本 skill 仓库 | `~/.agents/skills/gao-science-ppt-skill`（独立 public 仓库） | 首次 `git clone git@github.com:Gao-thinking/gao-science-ppt-skill.git ~/.agents/skills/gao-science-ppt-skill` |
+| python3 | ≥3.9 | `brew install python3` |
+| python-pptx | 含 Pillow | `python3 -m pip install --user python-pptx Pillow` |
+| lxml | 随 python-pptx 安装 | 同上 |
+| 本 skill 仓库 | `~/.agents/skills/gao-science-ppt-skill` | `git clone` 后同步 |
 
-脚本所在：`~/.agents/skills/gao-science-ppt-skill/scripts/`
-交付产物：`{课件名}-优化.pptx`（**默认不覆盖原件**，同目录输出副本；用户要求覆盖才覆盖）
+交付产物：`{课件名}-优化.pptx`（**默认不覆盖原件**，同目录/output 输出副本）。
 
 ---
 
@@ -35,38 +32,29 @@ description: >
 
 | 原理 | 落在哪一步 | 怎么用 |
 |------|-----------|--------|
-| **第一性原理** | 全程，尤其 §3.2 诊断与 §3.4 标题重写 | 抛开"原 PPT 长什么样"的惯性，从**这页要让学生学到什么**倒推每个元素是否必要。排版的本质 = 降低认知负荷：一页只服务一个教学目标。标题重写问"最少的字把知识讲清"，不逐字润色原标题 |
-| **贝叶斯** | §3.2 诊断、§5 复盘 | 先验 = 常见课件病（字号混乱、字体混用、图片比例不一、正文超载）；证据 = 脚本统计的**实际数据**（字号/字体种类数、图片宽高比分布、每页文字量）→ 后验分级：**必改 / 建议改 / 不动**。单次偶发不升级 skill，2+ 次复现才升级 |
-| **JTBD** | 全流程 | 老师雇佣这个 skill 是"把课件打磨成能直接上课的成品，不丢内容、不破坏原文件、不让我一个个手动改"。每页回答学生 3 问：**这页在讲什么 / 凭什么 / 我该带走什么** |
-| **JTBD** | 交互设计 | 基础排版只打断 3 次：目标确认、方案确认、教学设计确认；每问都给推荐项；其余全部自动。**四类可复用改造（§3A）的每个可调整点也各弹一窗**（给推荐项），选默认即可几乎全程自动 |
-| **奥卡姆** | 全程 | 能不改就不改；一个改动服务多个指标（统一字体 = 同时降认知负荷 + 视觉整齐）；优先改脚本/规则而非加新流程；**内容不增删**——课件原有文字只改排版不改事实，教学设计填充 = 原位替换学习目标/重点难点页文字，不新增页、不动版式 |
+| **第一性原理** | 全程，尤其诊断与标题改写 | 抛开"原 PPT 长什么样"的惯性，从**这页要让学生学到什么**倒推每个元素是否必要。排版的本质 = 降低认知负荷 |
+| **贝叶斯** | 诊断、§7 复盘 | 先验 = 常见课件病；证据 = 实际数据（字体种类/比例分布/文字量）→ 分级：**必改 / 建议改 / 不动**。2+ 次复现才升级 skill |
+| **JTBD** | 全流程+交互 | 老师 JTBD："打磨成能直接上课的成品，不丢内容、不破坏原件、不让我手动改"。只打断 3 次，每问给推荐项 |
+| **奥卡姆** | 全程 | 能不改就不改；内容不增删——排版只动格式，教学设计=原位替换表格文字不动版式 |
 
-### 1.1 排版统一的三条铁律
+### 1.1 排版统一铁律
 
-1. **标题**：每页至多 1 个视觉标题，用「动宾短语 / 概念名」式（如"核能的概念""能的转化方向"），去掉"本节""课件"等占位前缀；封面标题 = 课节名，正文页标题 = 该页知识点。层级：封面(40-44pt) > 节标题(32-36pt) > 页标题(24-28pt) > 正文(18-20pt) > 注释(14-16pt)。
-2. **图片**：同页内图片等宽或等高对齐（默认等宽），统一裁剪比例（默认 4:3），统一加细边框（1pt 浅灰）与间距；公式/截图类保留原比例只做对齐。**配图一律"按素材缩放替换"——用 `replace_images` 换掉原图 blob（按原图框比例中心裁剪），绝不新增图片 shape，替换后图框位置/尺寸保持不变**。
-3. **字体**：中文统一（默认 微软雅黑 / 苹方），西文/数字统一（默认 Calibri / Helvetica），正文统一字号（默认 20pt，≥18pt）；同页同层级同字号。
-4. **目录概览配色（2026-08 升级）**：学习内容（目录）页序号维持黄色 FFC000，概览文字显式白色 FFFFFF；`toc` 用 `num_color`/`text_color` 落地。
-5. **每课时配图差异化 + 导入适配（2026-08 升级，默认必做）**：封面（页1 大图+小图）、导入新课（页2 横幅+竖图）、学习内容目录左图（页5）按**本课时内容**取图替换（§3A A-3），跨课时互不相同且不与已交付课时重复（blob 哈希核对）；「导入新课」右侧框文案按本课时内容重写（§3A A-2），一次弹窗确认。
-6. **全片 Morph 过渡（2026-08 升级，默认必做）**：所有页面切换用 Morph（`transitions: {"effect":"morph","dur":2000}`），脚本写入 p159:morph + 淡入淡出 fallback；旧版 PowerPoint/LibreOffice 自动降级。
-
-### 1.1b 节内角标统一（左上角标题铁律）
-
-同一小节范围内，每页左上角的角标标题必须**逐字一致**：序号格式（一、二、…全角顿号，不带空格）、标题文字、标点完全统一。诊断时必须逐页核对角标（正文页左上角 + 节分隔页 GROUP 内矩形 + 例题/练习页角标三处都要查），发现以下任一情况即列入必改：
-- 序号带空格（如「二 、神经系统的组成与功能」「一、 人体的稳态」）→ 统一去空格
-- 残留上一课时/上一节角标（如第2课时例题页残留「一、 人体的稳态」圆角矩形）→ 删除残留角标，只留本课时正确角标
-- 同一节内角标文字不一致 → 统一为节分隔页 GROUP 内的标准写法
+1. **标题**：每页至多 1 个视觉标题，「动宾短语/概念名」式；层级：封面(40-44) > 节(32-36) > 页题(24-28) > 正文(18-20) > 注释(14-16)pt。
+2. **图片**：配图一律"按素材缩放替换"——换 blob 不增 shape；新图按**原图框比例裁剪**（绝不拉伸压缩）；**替换时必须清空旧 srcRect 裁剪属性**（残留会二次裁切→变形）。原生未替换图的自带 srcRect 保留。
+3. **字体**：中文微软雅黑/苹方，西文 Calibri/Helvetica；latin→ea→cs 按 schema 顺序写入（乱序会触发 PowerPoint repair）。
+4. **目录概览配色**：序号黄 FFC000、概览文字显式白 FFFFFF。
+5. **每课时配图差异化**：封面/导入新课/目录配图按**本课时内容**取图，跨课时互不相同且不与已交付课时重复（md5 核对）。
+6. **全片 Morph 过渡**：所有页面切换用 Morph（p159:morph + fade fallback 兼容旧版）。
+7. **角标一致（§1.1b）**：同一小节左上角标逐字一致；序号无空格、无上一节残留、章节序号连续（一/二/三/四）。
 
 ### 1.2 教学设计填充（替换学习目标/重点难点页文字，不新增页）
 
-**默认做法（2026-08 升级）**：不追加末页，而是定位课件既有的「学习目标」页与「重点难点」页（通常为表格，常为上一节残留内容），把其中文字**替换为本课实际内容对应的文案**，并符合目标格式：
+定位既有「学习目标」「重点难点」表（常为上一节物理残留），把文字**替换为本课实际内容推导的文案**：
 
-- **学习目标表**：科学观念 / 科学思维 / 探究实践 / 态度责任 四维条目（items 形式，「序号金色+内容白色」run 级格式）
-- **重点难点表**：重点 = 本课核心知识点（页数最多/推导最复杂）；难点 = 含"易错""注意"标记或抽象推导的知识点
-
-文案来源铁律：**全部从课件既有内容（各页知识点、例题、小结）推导，禁止编造**；确需补充 → 标注「(补充建议)」并在打断3 请用户确认。目标动词符合学段（理解/概述/运用等）。
-
-**兜底**：课件确实没有学习目标/重点难点页时 → 才在末尾追加「教学设计」页（`teaching` 字段 / `--append-teaching`），并在交付总结注明。
+- 学习目标表：科学观念/科学思维/探究实践/态度责任 四维（items 形式保「序号金+内容白」run 格式）
+- 重点难点表：重点=核心知识点，难点=抽象推导/"易错"点
+- 文案全部从课件既有内容推导，禁止编造；补充需标注「(补充建议)」并在打断3确认
+- 兜底：课件无这两类页时才在末尾追加教学设计页
 
 ---
 
@@ -74,320 +62,370 @@ description: >
 
 | 项 | 说明 |
 |----|------|
-| 输入 | 1-N 份 `.pptx` 课件（`.ppt` 先经 Office/LibreOffice 转 `.pptx`） |
-| 输出 | `{原名}-优化.pptx`（副本，默认同目录，可用 `-o` 指定输出目录，不覆盖原件）+ `{原名}-诊断.json`（诊断报告） |
-| 设计偏好（可选） | 用户给字体/配色/学校模板要求 → 以用户为准；不给 → 用 §1.1 默认 |
+| 输入 | 1-N 份 `.pptx`（`.ppt` 先转 `.pptx`） |
+| 输出 | `{原名}-优化.pptx`（副本，默认 output/ 或同目录，不覆盖原件） |
 
 ---
 
 ## §3 工作流
 
-**交互原则**（JTBD + 奥卡姆）：只打断 3 次：**目标确认 / 方案确认 / 教学设计确认**。异常才追加弹窗（脚本失败、诊断异常）。每个 `request_user_input` 的选项都标 `(Recommended)`。
+**交互原则**：只打断 3 次（目标确认/方案确认/教学设计确认），异常才追加弹窗，选项都标 `(Recommended)`。
 
-### Step 0: 自动热更新（静默，不弹窗）
-
-每次调用开始时先自更新，保证跑的是最新版规则/脚本：
+### Step 0: 自动热更新（静默）
 
 ```bash
-cd ~/.agents/skills/gao-science-ppt-skill
-git fetch origin -q 2>/dev/null || true
+cd ~/.agents/skills/gao-science-ppt-skill && git fetch origin -q 2>/dev/null || true
 BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
-if [ "$BEHIND" -gt 0 ]; then
-  git pull --ff-only origin main -q 2>/dev/null && echo "[hot-update] 已更新 ${BEHIND} 个提交 → $(git rev-parse --short HEAD)"
-fi
+[ "$BEHIND" -gt 0 ] && git pull --ff-only origin main -q && echo "[hot-update] 已更新 ${BEHIND} 提交"
+# 有本地改动(git status非空)则跳过pull，交付总结注明
 ```
-
-- 有本地未提交改动（`git status --porcelain` 非空）→ **跳过自动 pull**，用当前版本继续，交付总结里提示「本地有改动，未热更新」
-- pull 失败（网络/冲突）→ 静默跳过，继续用当前版本，不打断流程
-- 更新后若有新 `scripts/` 变化，本流程直接使用新脚本，无需重启
-- 复盘 §5 的 push 链路不变：本次调用结束如有升级提交，下一次调用会自动拉回
 
 ### Step 1: 需求确认 ⬜（第 1 次打断）
 
-收集以下信息（用户没说全才追问，**最多追 1 问**，归入打断1）：
+文件已给不追问路径；学段学科影响目标动词；偏好缺省=默认规范。
+弹窗：「将优化 {文件}。使用默认规范（微软雅黑/Calibri，正文≥18pt，配图按课时内容替换，目录黄序号白文字，全片 Morph，学习目标/重点难点页按本课内容重写）？」选项：用默认规范直接开始(Recommended) / 调整偏好 / 只排版不动表格文字 / 直接覆盖原件。
 
-| 维度 | 说明 |
-|------|------|
-| 文件 | PPTX 路径或目录。给了文件 → 不追问路径 |
-| 学段学科 | 影响教学设计语气与目标动词（如"理解/掌握"） |
-| 偏好 | 字体/模板/是否覆盖原件（默认不覆盖） |
+### Step 2: 内容诊断（自动，M1 内联）
 
-`request_user_input`（打断1）：
-```
-header: "课件优化目标确认"
-question: "将优化 {文件}。使用默认规范（微软雅黑/Calibri，正文20pt，4:3图片对齐，学习目标/重点难点页按本课内容重写）？"
-options:
-  - "用默认规范，直接开始" (Recommended)
-  - "调整字体/字号/图片比例" → 用户给偏好，回填到 §2 偏好
-  - "只要排版统一，不动学习目标/重点难点文字" → 跳过 §1.2
-  - "直接覆盖原件" → 交付时覆盖而非副本
-```
-
-### Step 2: 内容诊断（自动）
-
-```bash
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_analyze.py \
-  -i /path/to/课件.pptx -o /tmp/ppt-diag/ 2>&1
-```
-
-输出 `{name}-诊断.json`：每页提取标题（大字文本启发式）、全部文本（字号/字体/粗体）、图片（宽高/比例/压缩状态）、文字量。读取后按 §1 四原理分级：
-
-| 证据 | 判定 |
-|------|------|
-| 同页 ≥3 种字体 或 同层字号差 ≥2 档 | 必改（字体统一） |
-| 标题非动宾/概念式 或 标题层级混乱 | 必改（标题重写） |
-| 图片比例 ≥3 种 或 明显错位 | 必改（图片统一） |
-| 单页文字 >150 字 | 建议改（拆页提示，**不自动拆页**，进方案确认） |
-| 其余 | 不动 |
+用 §6 M1 提取：每页标题候选、文本(字号/字体/粗体)、图片(尺寸/比例)、文字量。分级判定：
+- 同页 ≥3 字体或同层字号差 ≥2 档 → 必改（字体统一）
+- 单元格/段落含上一节课内容（如物理公式出现在生物课件）→ 必改（重写）
+- 图片比例混乱但为知识图示 → 不裁剪不换（防破坏标注）；仅门面图（封面/导入/目录）参与替换
+- 单页 >150 字 → 建议拆页提示，不自动拆
 
 ### Step 3: 方案确认 ⬜（第 2 次打断）
 
-生成改动清单（`必改` 逐项列出，`建议改` 汇总），弹窗确认：
+弹窗列改动清单：N 处必改（目录 X/分隔页 Y/角标 Z/表格 W 张/配图 G 张/Morph）+ M 项建议。选项：全部执行(Recommended) / 只必改 / 手动挑改 / 调整方案。
 
-```
-header: "改动方案确认"
-question: "共 N 处必改（标题 X 页、字体 Y 处、图片 Z 张）+ M 项建议。执行？"
-options:
-  - "全部执行" (Recommended)
-  - "只执行必改，跳过建议" → 过滤后执行
-  - "手动挑改" → 用户逐项勾选
-  - "调整方案" → 用户补充说明后重新生成清单
-```
+### Step 4: 执行统一（自动，M2-M9 内联）
 
-### Step 4: 执行统一（自动）
-
-```bash
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
-  -i /path/to/课件.pptx -o {原名}-优化.pptx \
-  --plan /tmp/ppt-diag/{name}-方案.json 2>&1
-```
-
-方案 JSON 由 AI 按 §1.1 生成，字段：
-
-| 字段 | 作用 |
-|------|------|
-| `titles` | `{"<页号>": "<新标题>"}` 按页替换该页最大字号文本（引导页/章节文字） |
-| `text_replace` | `{"<页号>": [{"old","new","mode":"exact\|contains\|startswith"}]}` 段落级替换（兼容一段拆多 run），用于重写导入文字 |
-| `table_replace` | `{"<页号>": [{"row","col","text"}]}` 或 items 形式 `{"row","col","items":[{"num":"1.","text":"…"}]}` 替换表格单元格（学习目标/重点难点页），items 保持「序号金色+内容白色」run 级格式 |
-| `replace_images` | `{"<页号>": [{"pic": <该页第几张图,0-based>, "path": "新图"}]}` 替换配图，新图按原图框比例中心裁剪防拉伸；**递归处理 GROUP 内嵌图片**（目录/装饰图常组合内） |
-| `round_rect` | `{"pages": [1-based] 缺省=全部, "skip": [页号], "adj": "val 6060", "shadow": true}` 统一图片为圆角矩形（参考页2 左图样式：roundRect + 外阴影），递归处理 GROUP 内嵌图片 |
-| `layout_images` | `{"<页号>": [{"pic": n, "left_in": x, "top_in": y, "width_in": w, "height_in": h}]}` 设置图片位置/尺寸（封面四图适配、目录左图调整），只改出现的字段，单位英寸，递归处理 GROUP 内嵌 |
-| `fonts` | `{"latin": "Calibri", "ea": "微软雅黑"}` 中英分离统一字体 |
-| `size_map` | `{"旧pt": 新pt}` 字号统一（用户偏好按原页格式时省略） |
-| `images` | `{"mode","width_in","ratio","align","border","pages"}` 图片布局统一；`pages` 限定页号列表（缺省=全部） |
-| `toc` | `{"<页号>": {"shape": "形状名(可选)", "num_color": "FFC000", "text_color": "FFFFFF", "items":[{"num":"1.","text":"…"}]}}` 重建/重排目录条目（A-1 用；序号黄、概览文字白；末尾保留「课堂总结/练习与应用/提升训练」并顺延序号） |
-| `para_replace` | `{"<页号>": [{"contains":"旧词","text":"新整段"}]}` 按关键词整段改写（A-1 改残留旧节名、正文左上角角标） |
-| `box` | `{"<页号>": {"shape":"形状名(可选)", "text":"…", "mode":"replace\\|append"}}` 填充/改写一个文本框（A-2 填「导入新课」右侧引导框；text 支持 `\\n` 多行，新行继承首行字号/加粗/颜色）；缺省取该页最大/最靠右文本框 |
-| `transitions` | `{"effect": "morph", "dur": 2000, "pages": [可选]}` 全片/指定页切换效果（默认 Morph + fade fallback），见 §1.1 铁律 6 |
-| `teaching` | 兜底教学设计页内容（仅当课件无学习目标/重点难点页时追加末页；或 `--append-teaching` 单独传入），见 §1.2 |
-
-脚本机械执行，**只改排版不改文字事实**（`text_replace` 是用户明确要求的文字重写例外，重写内容必须从课件既有信息推导）。
+顺序固定：分隔页/角标改写 → 删残留形状 → 配图替换(裁剪+srcRect清理) → 删多余小图 → 目录重建(带配色) → 表格重写 → 导入文案 → 字体统一(最后跑，覆盖新建 run) → Morph 全片 → 保存副本。
 
 ### Step 5: 教学设计填充 ⬜（第 3 次打断）
 
-按 §1.2 从诊断结果推导「学习目标」（四维：科学观念/科学思维/探究实践/态度责任）与「重点难点」文案，用 `table_replace`（items 形式，保 run 级格式）替换对应页表格文字；无对应页才兜底追加末页。弹窗确认：
-
-```
-header: "教学设计确认"
-question: "已从课件内容生成学习目标 N 条（四维）+ 重点难点 M 条，将原位替换学习目标/重点难点页文字（保留原表格格式），含 (补充建议) 标注的 X 处。确认写入？"
-options:
-  - "确认写入" (Recommended)
-  - "修改内容" → 用户给出修改点，修订后重新确认
-  - "跳过教学设计填充" → 不替换
-```
-
-确认后随 apply 方案一并执行（`table_replace` 写入 plan；兜底场景用 `--append-teaching` 或 `teaching` 字段）。
+按 §1.2 从诊断推导四维目标+重难点文案（M4 写入表格），弹窗确认后随 Step 4 一并执行或单独补跑。
 
 ### Step 6: 交付总结（不弹框）
 
 ```
 ✓ 优化完成（未覆盖原件）
-  输出：{原名}-优化.pptx（同目录）
-  标题重写：X 页    字体统一：Y 处    图片统一：Z 张
-  教学设计填充：已替换学习目标/重点难点页（或末页兜底/跳过）
-  诊断报告：{name}-诊断.json
-  复盘：本次是否有升级项 → 见下
-```
-
-**明确不做**：不覆盖原件（除非打断1 选了覆盖）、不改动课件文字内容、不提交到老师的课件目录之外。
-
----
-
-## §3A 四类可复用改造（目录·导入新课·配图·动画排查）
-
-> 用户提到下面四类改造中的任一项（如「目录/节名对不上」「导入新课缺内容」「第1/2/5页图片不合适」「帮我排查哪些页没动画」）→ 进入本节。四个部分可单独调用、也可一次打包。**每个可调整点都先 `request_user_input` 让用户选（缺省给推荐项），确认后再改**；不在本次选中的部分跳过。
-
-**四原理在四类里的用法**（每次改造决策必过）：
-
-| 改造 | 第一性原理 | 贝叶斯（证据） | JTBD | 奥卡姆 |
-|------|-----------|--------------|------|--------|
-| A-1 目录/节名 | 这页要呈现"本课讲哪几节"，不是抄上节模板 → 只改文字保留格式 | 残留旧节名是否 2+ 处 / 或与封面节名冲突才列必改 | 老师不用逐页手改；给推荐条目 | 只替换残留段落，不改版式 |
-| A-2 导入新课 | 这框是"抛本课核心问题"，不是填空陪跑 | 右侧框空 / 占位 / 与本课无关 → 必填 | 文案一次弹窗确认即可 | 只这 1 页，不碰其它 |
-| A-3 配图 | 图要让学生直观看懂"这页知识点"，不只求好看 | 图拉伸/主题不符/比例乱 → 才换；单张偶发不整套换 | 用户确认每处主题一次 | 按原框比例裁，不动版式 |
-| A-4 动画 | 动画服务"讲课节奏"，不是炫技 | 无动画/高频重复页有真实课堂证据才处置 | 报告给用户拍板，不擅自改 | 只做排查 + 最小建议 |
-
-先跑一次诊断（见 Step 2）拿到逐页文字/图片结构，再按需做下列 A1-A4。
-
-### A-1 目录 & 各节标题/左上角节名适配（对应「一）目录与每节开头文字」）
-
-1. 从封面/导入页（第1页或含大标题页）读出**本课节名**（例：「第4节 核能」）。
-2. 用诊断找 目录页 + 各「节分隔/引导页」。浙教版等模板常见**残留旧节名**（如上一课的「第3节 电路中的电能」混入本课），把这些逐页定位。
-3. 分两类文字适配：
-
-   | 现象 | 改动 | plan |
-   |------|------|------|
-   | 节分隔页/文件夹残留旧节名 | 整段改写成本课节名 | `para_replace`: `{"<页号>": [{"contains":"电路中的电能","text":"第4节 核能"}]}` |
-   | 目录页条目/序号错（含落在不属于本课的内容） | 重建条目，本课小节排前，**末尾保留「课堂总结/练习与应用/提升训练」，序号顺延** | `toc`: `{"<页号>": {"items":[{"num":"1.","text":"放射性"},…,{"num":"5.","text":"提升训练"}]}}` |
-   | 正文页每节左上的角标（如“一、放射性”）与节名不符 | 按封面一致的节名/小节名重写 | `para_replace` |
-
-4. ⬜ 交互：弹窗列出「目录条目 → 用户确认」清单，推荐默认已按「小节+三类结尾」排好；确认后写入 `toc`。
-
-### A-2 导入新课右侧内容框填充（对应「二）导入新课」）
-
-1. 定位「导入新课」页（第2页或含「导入」字样；右侧常为空白/占位大文字框）。
-2. 通读全课件核心内容 → 写成 1-2 句**课程引导**（抛出一个本课核心问题或生活情境，如核能→「太阳的光热来自核聚变，人类如何安全利用它？」）。
-3. ⬜ 把引导文案弹窗给用户改/确认（推荐）→ 用 `box`: `{"<页号>": {"shape":"…", "text":"…", "mode":"replace"}}` 填入右侧框（保留原框格式）。
-
-### A-3 配图替换：第1页（封面，多张）/第2页/第5页（对应「三）图片替换」）
-
-1. 逐页读取该页文字定**配图主题**：封面大图=核电站等主视觉；封面小图（常为 GROUP 内椭圆）=太阳/原子/链式反应等；导入页图=与课程引导呼应；第5页目录左图=本课示意。
-2. ⬜ 弹窗列出「每张图 → 建议主题 + 具体图片」，用户可换成其它主题（推荐项直接采纳）。
-3. 取图：**优先 Pexels 直链**（`https://images.pexels.com/photos/{id}/…`，页面被反爬/403 时改用 Wikimedia Commons API 等高清开源图源，下载到本地临时目录）。**素材找不到时允许主题拓展**：找精确主题（如神经元显微图）失败，可拓展到相邻/上位主题（如人类运动、体育活动、器官系统解剖），只要与该页知识点的教学情境相关即可。
-   - **方向匹配铁律（2026-08 升级）**：竖版图框（h>w，如导入新课左侧图）**只选竖版源图**；横版框只选横版源图。`replace_images` 用中心裁剪保持比例、绝不压缩拉伸；但方向失配会大幅裁剪损失主体（脚本保留面积 <60% 时告警），选图阶段就按方向过滤，不要靠裁剪补救。
-   - **易得性降维（2026-08 二次升级，选图第一步）**：把抽象/难拍的窄概念**降维成素材丰富、画面好看的典型情境**再搜索——问自己"这个知识点的经典载体/场景是什么"。例：膝盖（膝跳反射）→ **足球踢球**；条件反射（巴甫洛夫）→ **狗听指令训练**；高级神经活动 → **下棋/弹钢琴**；血糖 → **方糖/甜点**；碘与甲状腺 → **海带**；语言中枢 → **阅读/交谈**。禁止死磕精确名词导致配图丑/糊/缺。
-   - **壁纸级审美（2026-08 升级）**：封面/导入/目录等门面图优先"壁纸感"高质量图片（分辨率 ≥1600px、构图干净、有视觉冲击力）；科学主题优先荧光显微美图、大场景运动摄影。拒绝模糊小图、截图式配图。
-4. 用 `replace_images` 生效：`{"<页号>": [{"pic": <该页第几张,0-based>, "path": "/tmp/…/xxx.jpg"}]}` → 脚本按**原图框比例中心裁剪**防拉伸，并**递归处理组合（GROUP）内嵌图片**（封面小图、目录左图常在组合里）。**这是"替换"不是"新增"**：只换图片内容（blob），图框位置/尺寸/形状一律不动；验证时核对替换前后 blob 哈希/尺寸变化。
-   - 封面/整列排布也可配 `layout_images`（位置尺寸）与 `round_rect`（圆角样式，仅正方图）。
-
-**多课时配图差异化（铁律）**：同一节拆多课时（如「第1节 神经调节」第1/2课时）共用模板时，**每一课时的封面组图、导入页图、目录图都必须互不相同**——封面主视觉/小图、导入横幅、目录左图按各课时内容（第1课时=稳态，第2课时=神经组成）分别取图，禁止跨课时复用同一张（已在封面/导入/目录用过的图不再用于另一课时）。诊断时对比各课时诊断 JSON 的图片 blob 哈希，重复即列入必改。
-
-### A-4 动画排查（对应「四）动画」）
-
-```bash
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_anim_audit.py \
-  -i /path/to/课件.pptx -o /tmp/ppt-diag/
-```
-
-输出「无动画页 / 疑似重复动画页 / 有动画页」。⬜ 把逐页报告弹窗给用户，确认哪些要补动画、哪些重复需去掉（本部分只做**排查与最小改动建议**，不擅自增删动画；如用户要求补，调用脚本参数/记录在交付总结）。
-
-### 四类交付总结
-
-```
-✓ {课名} 四类改造完成
-  · 目录/节名：X 处节名适配，目录 N 条（末三条=课堂总结/练习与应用/提升训练）
-  · 导入新课 01 框：已填充/未改
-  · 配图：替换 G 张（封面/第2页/第5页）
-  · 动画排查：无动画页[1,..] 疑似重复页[..] → 处置：…
+  输出：{原名}-优化.pptx
+  目录重建：X 页    分隔页/角标修复：Y 处    目标/重难点重写：W 张
+  配图替换：G 张（方向匹配/去重验证）   导入文案：已适配   Morph：n/n 页
+  验证：srcRect清零 ✓ rPr顺序 ✓ zip完整 ✓ md5去重 ✓ 回归 ✓
 ```
 
 ---
 
-## §4 附录（按需查阅）
+## §3A 可复用改造要点
 
-### A1 环境准备
-
-```bash
-python3 -m pip install --user python-pptx
-```
-
-### A2 脚本用法
-
-```bash
-# 诊断：提取每页标题/字体/字号/图片/文字量 → JSON + 可读摘要
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_analyze.py -i deck.pptx -o /tmp/ppt-diag/
-
-# 动画排查：逐页 无动画/疑似重复/有动画 → JSON（§3A A-4 用）
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_anim_audit.py -i deck.pptx -o /tmp/ppt-diag/
-
-# 需要按形状名定位时（如 toc/box 指定 shape），先查页内形状名：
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_dump_shapes.py -i deck.pptx --pages 1,2,5
-
-# 应用：按方案 JSON 执行标题/字体/图片统一 + 四类改造 + 可选教学设计页（-o 可指定输出目录；示例见 ./examples/plan.example.json）
-python3 ~/.agents/skills/gao-science-ppt-skill/scripts/pptx_apply.py \
-  -i deck.pptx -o output/deck-优化.pptx --plan plan.json [--append-teaching teaching.json]
-```
-
-plan.json 字段见 §3 Step 4 + §3A 表。配图素材两个优先源：
-1. **Pexels 直链**：`https://images.pexels.com/photos/{id}/pexels-photo-{id}.jpeg?auto=compress&cs=tinysrgb&w=1260`（免费商用；页面搜索可能被反爬 403，此时改用下一条）。
-2. **Wikimedia Commons API**（高清开路，无 403）：`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=…&gsrnamespace=6&prop=imageinfo&iiprop=url&iiurlwidth=1280&format=json` → 取 `imageinfo[].thumburl` 下载本地再替换。
-
-### A3 诊断字段说明
-
-```
-slides: [{index, title, texts:[{text,size,font,bold}], images:[{w,h,ratio,compressed}], word_count, page_type}]
-page_type: cover / section / content / exercise / summary（启发式）
-```
-
-### A4 踩坑
-
-- **python-pptx 未装**：pip install 后重跑；脚本报 `ModuleNotFoundError` 即此因
-- **.ppt 旧格式**：python-pptx 只读 `.pptx`；先经 Office/LibreOffice 另存为 `.pptx`
-- **图片压缩状态**：`compressed` 字段 = 图片尺寸 vs 幻灯片内显示尺寸；显示尺寸 > 原图 1.5 倍视为"拉伸模糊"，列入必改（建议换高清图，方案里标注）
-- **公式（OMML）文本**：python-pptx 读不到公式内文字，诊断中公式页文字量偏低属正常，不据此判"空页"
-- **主题字体**：字体可能来自主题（run.font.name 为空）→ 诊断标 `theme`，统一时按主题字体映射处理
-- **热更新被本地改动挡住**：本地有未提交改动时自动 pull 会跳过（按设计），交付总结里提示即可；`git stash` 后可手动拉取
-- **pexels 图替换后拉伸变形**：新图比例与图框不同直接替换会拉伸 → 脚本已按原图框比例中心裁剪；个别图裁后主体偏离中心，改用 `himalaya-peaks` 等竖版素材或换图源（pixabay/google 亦可）
-- **课件残留上一节引导页/目录**：浙教版课件常见模板残留（如"第3节 电路中的电能"混入第4节课件）→ 诊断时核对引导页文字与封面节标题是否一致，不一致列入必改（`titles` 按页替换）
-- **字号偏好**：用户可能只要统一字体、字号保持原页格式（打断1 问清，`size_map` 省略即可）
-- **封面椭圆小图与 GROUP 内嵌图片**：封面小图常为 `ellipse` 几何、目录/装饰图常嵌在 GROUP 组合内 → `round_rect`/`layout_images`/`replace_images` 均递归处理；封面四图常见偏好「大图主视觉（底部/右侧满宽）+ 小图左上角成排、尺寸一致」，打断时给此推荐项
-- **圆角样式参考页2 左图**：正文图片统一圆角时以导入页左图为参考（roundRect + `adj 6060` + outerShdw 阴影），范围默认仅正文页、封面保持各自样式（打断确认）
-- **组合内图片替换失败**：`apply_replace_images` 早期只遍历顶层 shapes，页5 目录左图等嵌在 GROUP 内的图片会被静默跳过（blob 哈希不变）→ 已改 `_collect_pics` 递归；验证时必须核对替换后 blob 哈希/尺寸变化，不能只看"已保存"
-- **PowerPoint 打开报 repair（rPr 乱序）**：直接 append `a:ea`/`a:cs` 到 rPr 末尾会破坏 `latin→ea→cs→sym` 的 schema 顺序，Office 严格校验 → 必须按锚点插入（latin 后 addnext，或 sym/hlink 前 addprevious）；**验证时必须解压跑 XML 元素顺序检查**（rPr/spPr 顺序），不能只依赖 LibreOffice 转换
-- **round_rect 只改方形图**：统一圆角矩形仅针对原本 `prstGeom="rect"` 的图片；原本 `ellipse`（圆形）/`roundRect`（已圆角）的保持原样，避免把圆图改方（用户明确要求）
-- **替换配图须贴切页内容**：导入页讲"太阳核聚变产生核能"→ 配太阳竖图而非核电站；替换前先读该页文字定主题，打断时给主题选项
-- **学习目标/重点难点表格常为上一节残留**：与引导页残留同源，模板复制后表格内容仍是旧课（如第4节课件写焦耳定律）→ 诊断时核对页3/页4 表格内容与本课是否一致，不一致按课件动态重写（科学观念/科学思维/探究实践/态度责任 四维 + 重点/难点）
-- **表格替换须保持 run 级格式**：单元格内"1."序号与内容是两个 run（序号金色、内容白色），整段塞入第一个 run 会破坏颜色 → 用 `table_replace` 的 items 形式（num/text 分离），每段首 run 保留序号格式、第二 run 写内容
-- **同章节多课时课件共用模板**：同一节拆成多课时（如"第4节 核能"第1/2课时）时模板相同，前 5 页（封面/导入/学习目标/重难点/目录）配图与导入文字会完全相同 → 诊断时识别课时差异，配图/导入/学习目标按各课时内容（如放射性/裂变聚变 vs 核电站）分别适配，不能复用同一套替换图
-- **四类改造 §3A 新增踩坑**：① `toc` 缺省取"run 数最多"文本框，若命中小字注释框 → 务必按 `shape` 名指定（用脚本 dump 页内 shape 名/位置）；② `para_replace` 是一次一窗的交互确认，改节名残留要逐页核对"左上角角标 + 分隔页 + 目录"三处都要查，不能只改分隔页；③ 无动画页（封面/目录/答案页）**不一定需要补动画**，A-4 报告只做参考，最终处置由用户拍板；④ 动画排查脚本读的是原文件 zip 的 slide XML，若文件被加密/换格式会报错，属正常。
-- **replace_images 依赖 `/tmp/ppt-assets/` 目录**：旧脚本直接把临时图写进 `/tmp/ppt-assets/_tmp_repl.jpg`，目录不存在时静默失败（图没换成、blob 哈希不变）→ 已补 `os.makedirs(..., exist_ok=True)`；验证时必须核对替换后 blob 哈希变化，不能只看"已保存"。
-- **apply_fonts/apply_sizes 曾只处理顶层 shapes**：`iter_runs` 旧实现不递归 GROUP 组合、也不遍历表格，导致组合内标题（节分隔页矩形）与表格文字（学习目标/重难点表）字体/字号未统一，`rPr` 里残留 Times New Roman → 已改 `iter_runs` 递归 GROUP + 表格；**验证字体统一必须解压检查残留 `typeface`（如 Times New Roman），不能只看顶层 shape**。
-- **zipfile 重写必须保留全部条目**：用 `zipfile.ZipFile(f,'w')` 重打包时，若只写入"改动过的"文件而漏掉未改动的（如 slide XML 无变化时未写回），会丢 slide 导致 `python-pptx` 打开报 `KeyError: no relationship with key 'rIdN'` → 所有条目都要写回（改动才换内容，未改动用原 data），写后必须 `unzip -t` 校验包完整性。
-- **教学设计填充位置（2026-08 升级）**：默认原位替换「学习目标/重点难点」页表格文字（`table_replace` items 形式，保 run 级格式），不新增页；仅当课件无这两类页时才兜底在末尾追加教学设计页。
-- **apply_toc 三 run 目录段落（2026-08 修复）**：模板目录段常为 [序号金, 空格金, 内容白] 三 run；旧逻辑把内容写入 runs[1]（金色空格）→ 内容误变金色。已改为定位「最后一个非空 run」写入内容、清空中间 run；验证时逐条核对目录「序号金色/内容白色」。
-- **字体验证假阳性**：apply_fonts 只改非空可见 run 的 latin/ea；endParaRPr / defRPr / 清空后的空 run 中仍会残留旧 typeface（Times New Roman 等），不影响现有文字渲染 → 验证以「非空 run 字体分布」（pptx_analyze 复跑结果）为准，勿用原始 XML typeface 计数判定失败。
-- **配图替换须保持原图框比例**：`replace_images` 已按原图框比例中心裁剪；若原图框比例异常（如横幅 2.6:1），下载素材时优先匹配相近比例（可用 Pexels `w=` 参数或 Wikimedia `iiurlwidth`），避免大幅裁剪丢失主体。
-
-### A5 元规则
-
-- **本 skill 不产出课件目录之外的 git 操作**：交付即止，不 add/commit/push 用户课件
-- **skill 自身维护在独立 public 仓库** `Gao-thinking/gao-science-ppt-skill`：SKILL.md 与全部脚本同仓。更新后：
-  1. `git -C ~/.agents/skills/gao-science-ppt-skill add -A && git commit -m "..." && git push`
-  2. 各环境 `git -C ~/.agents/skills/gao-science-ppt-skill pull` 同步（Step 0 自动）
-- 提交邮箱：`293544754+Gao-thinking@users.noreply.github.com`（仓库级已配）
+- **目录&节名适配**：封面读本课节名；核对目录页/节分隔页/正文左上角标三处残留（如「功和机械能」混入生物课），M3 整段改写；目录末尾保留「课堂总结/练习与应用」并顺延序号。
+- **导入新课适配**：右侧文案框按本课时内容写 1-3 行引导问题（M6 多行填充）；左侧**只留一张大卡片图**，多余小横幅/小图用 M8 删除。
+- **配图替换策略（选图三步）**：
+  1. **易得性降维**：窄概念→素材丰富的典型情境（膝盖→足球踢球；条件反射→狗听指令；高级神经活动→下棋；血糖→方糖糖果；碘与甲状腺→海带）
+  2. **搜索词必须具象可拍摄**，禁抽象名词直搜（"激素"→"注射胰岛素的手"）；候选过滤学术图表类（标题含 diagram/chart/graph/labeled/scheme/svg 一律跳过），只用照片级具象图
+  3. **方向匹配**：竖框只选竖源图、横框选横源图（Commons 上限约 1.78 时可用 crop_anchor=top 保主体）；分辨率 ≥1400px；md5 与历史课时去重
+- **动画排查**（可选）：遍历 slide XML `<p:timing>` 报告无动画/疑似重复页，只排查建议不擅自改。
 
 ---
 
-## §5 复盘与自升级（每次调用完成后必做）
+## §6 python-pptx 直接操作模式库（核心，替代一切脚本）
 
-**收集 → 四原理过滤 → 弹窗确认 → 升级推送**，四步走（同 gao-wepost-ppt-skill §5）：
+> 使用方式：bash heredoc 内联运行（`python3 - <<'PYEOF' ... PYEOF`），不落地 .py 文件。以下模式均为验证过的正确实现，直接拷贝组合。
 
-### 5.1 收集观察
+### M1 全量诊断提取
 
-| 来源 | 收集什么 |
-|------|---------|
-| 弹窗 | 用户选了非推荐项？手动输入了什么偏好？ |
-| 流程 | 哪一步返工最多（诊断/方案/执行/教学设计）？脚本报错类型？ |
-| 反馈 | 用户口头纠正、抱怨、额外要求（如"图片别动""标题语气不对"） |
-| 环境 | python-pptx 行为变化；新踩的坑 |
-
-### 5.2 四原理过滤（候选 → 升级项，全部通过才算）
-
-1. **第一性原理**——改动是否更贴近"降低认知负荷、服务教学目标"？只是让流程更花哨 → 不升级
-2. **贝叶斯**——真实模式还是单次噪声？仅本次出现 → 不升级；2+ 次复现或有机制性根因 → 升级
-3. **JTBD**——是否让用户额外弹窗/等待？修复后是否更接近"一句话启动、全程自动"？
-4. **奥卡姆**——最小改动？优先改现有条款/脚本参数，能删则删；收益 > 维护成本才加
-
-### 5.3 弹窗确认
-
-- **无升级项** → 一句话告知，不弹窗
-- **有升级项** → `request_user_input` 列出候选（证据/四原理/改动四项说明），选项：全部升级（推荐）/ 部分升级 / 暂不升级
-
-### 5.4 升级执行
-
-```bash
-git -C ~/.agents/skills/gao-science-ppt-skill add -A
-git -C ~/.agents/skills/gao-science-ppt-skill commit -m "upgrade: <一句话依据>"
-git -C ~/.agents/skills/gao-science-ppt-skill push origin main
+```python
+from pptx import Presentation
+def iter_shapes(shapes):
+    for s in shapes:
+        yield s
+        if s.shape_type == 6: yield from iter_shapes(s.shapes)
+prs = Presentation(path)
+for i, slide in enumerate(prs.slides, 1):
+    for sh in iter_shapes(slide.shapes):
+        if getattr(sh, "has_table", False):
+            for r_i,row in enumerate(sh.table.rows):
+                for c_i,c in enumerate(row.cells): print(i, "表", r_i, c_i, c.text[:40])
+        elif sh.has_text_frame:
+            for p in sh.text_frame.paragraphs:
+                for r in p.runs:
+                    sz = r.font.size.pt if r.font.size else None
+                    print(i, sh.name, sz, r.font.name, r.text[:30])
 ```
 
-升级只改 SKILL.md/脚本自身，不新建文档；踩坑补进 §4 A4；每次升级独立 commit，回滚 = `git revert`。运行中的问题先修本次输出，改不改 skill 规则由复盘决定。
+### M2 字体统一（rPr 顺序安全，最后执行）
+
+```python
+from pptx.oxml.ns import qn
+def set_run_fonts(run, latin="Calibri", ea="微软雅黑"):
+    run.font.name = latin
+    rPr = run._r.get_or_add_rPr()
+    for tag in (qn("a:ea"), qn("a:cs")):
+        el = rPr.find(tag)
+        if el is not None: rPr.remove(el)
+    ea_el = rPr.makeelement(qn("a:ea"), {"typeface": ea})
+    cs_el = rPr.makeelement(qn("a:cs"), {"typeface": ea})
+    latin_el = rPr.find(qn("a:latin"))
+    if latin_el is not None:
+        latin_el.addnext(cs_el); latin_el.addnext(ea_el)
+    else:
+        anchor = next((rPr.find(t) for t in map(qn,("a:sym","a:hlinkClick","a:hlinkMouseOver","a:rtl","a:extLst"))
+                       if rPr.find(t) is not None), None)
+        if anchor is not None: anchor.addprevious(cs_el); anchor.addprevious(ea_el)
+        else: rPr.append(ea_el); rPr.append(cs_el)
+# 遍历须含 GROUP 与表格：
+for slide in prs.slides:
+    for sh in iter_shapes(slide.shapes):
+        targets = []
+        if getattr(sh,"has_table",False):
+            for row in sh.table.rows:
+                for c in row.cells:
+                    for p in c.text_frame.paragraphs: targets += p.runs
+        elif sh.has_text_frame:
+            for p in sh.text_frame.paragraphs: targets += p.runs
+        for run in targets: set_run_fonts(run)
+```
+
+### M3 段落改写（节名/角标残留）
+
+```python
+def para_replace(slide, rules):  # rules=[{"contains":"功和机械能","text":"第1节   神经调节"}]
+    for sh in iter_shapes(slide.shapes):
+        if not getattr(sh,"has_text_frame",False): continue
+        for para in sh.text_frame.paragraphs:
+            full = "".join(r.text for r in para.runs)
+            for rule in rules:
+                if rule["contains"] in full:
+                    if not para.runs: para.add_run()
+                    para.runs[0].text = rule["text"]
+                    for r in para.runs[1:]: r.text = ""
+```
+
+### M4 表格重写（text/items 两式，items 保「序号金+内容白」）
+
+```python
+def table_fill(slide, spec_rows):  # {(r,c): "纯文本" 或 [("1.","条目一"),("2.","条目二")]}
+    for sh in iter_shapes(slide.shapes):
+        if not getattr(sh,"has_table",False): continue
+        tbl = sh.table
+        for (r,c), val in spec_rows.items():
+            tf = tbl.cell(r,c).text_frame
+            if isinstance(val, str):
+                if tf.paragraphs and tf.paragraphs[0].runs:
+                    tf.paragraphs[0].runs[0].text = val
+                    for para in tf.paragraphs:
+                        for run in para.runs[1:]: run.text=""
+                else: tf.text = val
+            else:
+                for pi,(num,txt) in enumerate(val):
+                    para = tf.paragraphs[pi] if pi < len(tf.paragraphs) else tf.add_paragraph()
+                    runs = para.runs or [para.add_run()]
+                    runs[0].text = num
+                    if len(runs)>1: runs[1].text = txt
+                    for ex in runs[2:]: ex.text=""
+                for ep in tf.paragraphs[len(val):]:
+                    for run in ep.runs: run.text=""
+```
+
+### M5 目录重建（黄序号 FFC000 / 白文字 FFFFFF）
+
+⚠ 必须在清空 runs **之前**记录每段「最后一个非空 run」位置，否则定位失效、内容误继承序号色。
+
+```python
+def rebuild_toc(slide, shape_name, items, num_color="FFC000", text_color="FFFFFF"):
+    from pptx.dml.color import RGBColor
+    shape = next(s for s in iter_shapes(slide.shapes) if s.name==shape_name)
+    tf = shape.text_frame; paras = tf.paragraphs
+    orig_last=[]
+    for p in paras:
+        ln=-1
+        for j,r in enumerate(p.runs):
+            if r.text.strip(): ln=j
+        orig_last.append(ln)
+    for p in paras:
+        for r in p.runs: r.text=""
+    for i,(num,text) in enumerate(items):
+        if i >= len(paras):
+            nr = tf.add_paragraph().add_run(); nr.text=f"{num} {text}".strip(); continue
+        runs = paras[i].runs; last = orig_last[i]
+        if runs and last >= 1:
+            runs[0].text = num
+            for j,r in enumerate(runs):
+                if j==0: continue
+                r.text = (" "+text) if j==last else ""
+            runs[0].font.color.rgb = RGBColor.from_string(num_color)
+            runs[last].font.color.rgb = RGBColor.from_string(text_color)
+        elif runs:
+            runs[0].text=f"{num} {text}".strip()
+            for ex in runs[1:]: ex.text=""
+```
+
+### M6 文本框多行填充（导入新课文案）
+
+```python
+def box_write(slide, shape_name, text):  # text 支持 \n 多行
+    shape = next(s for s in iter_shapes(slide.shapes) if s.name==shape_name)
+    tf = shape.text_frame; lines = text.split("\n")
+    p0 = tf.paragraphs[0]
+    if p0.runs:
+        p0.runs[0].text = lines[0]
+        for r in p0.runs[1:]: r.text=""
+    else: p0.add_run().text = lines[0]
+    src = p0.runs[0] if p0.runs else None
+    for ln in lines[1:]:
+        np = tf.add_paragraph(); nr = np.add_run(); nr.text = ln
+        if src is not None:
+            try: nr.font.size = src.font.size
+            except Exception: pass
+            try: nr.font.bold = src.font.bold
+            except Exception: pass
+```
+
+### M7 配图替换（裁剪防变形 + 清 srcRect）
+
+```python
+import io
+from PIL import Image, ImageOps
+def replace_image(pic, slide, path, anchor="center"):
+    target = (pic.width/pic.height) if pic.height else 1.0
+    im = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    w,h = im.size; cur = w/h
+    keep = min(target/cur, cur/target)          # 方向失配检查：<0.6 应换向
+    if keep < 0.6: print(f"[warn] 方向失配仅保留{keep:.0%}，请换{'竖' if target<1 else '横'}版源图")
+    if cur > target+0.01:
+        nw=int(h*target); x0=(w-nw)//2; im=im.crop((x0,0,x0+nw,h))
+    elif cur < target-0.01:
+        nh=int(w/target); y0={"top":0,"bottom":h-nh}.get(anchor,(h-nh)//2)
+        im=im.crop((0,y0,w,y0+nh))
+    buf=io.BytesIO(); im.save(buf,format="JPEG",quality=88)
+    open("/tmp/ppt-assets/_tmp_repl.jpg","wb").write(buf.getvalue())
+    part,rId = slide.part.get_or_add_image_part("/tmp/ppt-assets/_tmp_repl.jpg")
+    blip = pic._element.blipFill.blip; blip.set(qn("r:embed"), rId)
+    bf = pic._element.blipFill                   # 关键：清残留 srcRect 防二次裁切变形
+    for sr in bf.findall(qn("a:srcRect")): bf.remove(sr)
+    try: pic.crop_left=pic.crop_right=pic.crop_top=pic.crop_bottom=0.0
+    except Exception: pass
+# pics = collect_pics(list(slide.shapes),[])  # 见 M8 的递归收集；索引按文档序
+```
+
+### M8 形状/图片删除（按名字，递归）
+
+```python
+def delete_shape(slide, name):
+    for sh in iter_shapes(slide.shapes):
+        if sh.name == name:
+            sh._element.getparent().remove(sh._element); return True
+    return False
+def collect_pics(shapes, out):
+    for s in shapes:
+        if s.shape_type == 13: out.append(s)
+        elif s.shape_type == 6: collect_pics(s.shapes, out)
+    return out
+```
+
+### M9 Morph 过渡全片
+
+```python
+from lxml import etree
+P_NS="http://schemas.openxmlformats.org/presentationml/2006/main"
+MC_NS="http://schemas.openxmlformats.org/markup-compatibility/2006"
+def morph_all(prs, dur=2000):
+    for slide in prs.slides:
+        sld = slide._element
+        for el in sld.findall(f"{{{P_NS}}}transition"): sld.remove(el)
+        for ac in sld.findall(f"{{{MC_NS}}}AlternateContent"):
+            if ac.find(f".//{{{P_NS}}}transition") is not None: sld.remove(ac)
+        xml=(f'<mc:AlternateContent xmlns:mc="{MC_NS}" xmlns:p="{P_NS}">'
+             f'<mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" Requires="p159">'
+             f'<p:transition xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" spd="slow" p14:dur="{dur}">'
+             f'<p159:morph option="byObject"/></p:transition></mc:Choice>'
+             f'<mc:Fallback><p:transition spd="slow"><p:fade/></p:transition></mc:Fallback>'
+             f'</mc:AlternateContent>')
+        el = etree.fromstring(xml)
+        timing = sld.find(f"{{{P_NS}}}timing"); clr = sld.find(f"{{{P_NS}}}clrMapOvr")
+        if timing is not None: timing.addprevious(el)      # CT_Slide 顺序: cSld→clrMapOvr→transition→timing
+        elif clr is not None: clr.addnext(el)
+        else: sld.find(f"{{{P_NS}}}cSld").addnext(el)
+```
+
+### M10 配图下载（Wikimedia Commons，具象词+方向匹配+图表过滤+去重）
+
+```python
+import json, urllib.request, urllib.parse, hashlib
+def api(params):
+    params.update({"format":"json"})
+    q = urllib.parse.urlencode(params)
+    req = urllib.request.Request(f"https://commons.wikimedia.org/w/api.php?{q}",
+                                 headers={"User-Agent":"courseware-bot/1.0"})
+    with urllib.request.urlopen(req, timeout=25) as r: return json.load(r)
+def pick(term, out, target_ratio, used_md5=set(), must_words=(), ban_words=("diagram","labeled","scheme","chart","graph")):
+    data = api({"action":"query","generator":"search","gsrsearch":f"filetype:bitmap {term}",
+                "gsrnamespace":6,"gsrlimit":12,"prop":"imageinfo",
+                "iiprop":"url|size|mime","iiurlwidth":1600})
+    cands=[]
+    for p in ((data.get("query") or {}).get("pages") or {}).values():
+        t=p.get("title","").lower()
+        if any(w in t for w in ban_words): continue          # 图表过滤
+        if must_words and not any(w in t for w in must_words): continue  # 标题强校验防跑题
+        for ii in p.get("imageinfo", []):
+            if ii.get("mime") not in ("image/jpeg","image/png"): continue
+            w,h = ii.get("width",0), ii.get("height",0); r=w/h
+            if w<1300 or abs(r-target_ratio)/max(target_ratio,.01)>0.42: continue  # 方向/比例匹配
+            cands.append((abs(r-target_ratio),w,h,p.get("title",""),ii.get("thumburl") or ii["url"]))
+    for _,w,h,title,u in sorted(cands)[:4]:
+        try:
+            req=urllib.request.Request(u,headers={"User-Agent":"courseware-bot/1.0"})
+            with urllib.request.urlopen(req,timeout=30) as r2: b=r2.read()
+            md5=hashlib.md5(b).hexdigest()[:8]
+            if len(b)<60000 or md5 in used_md5: continue     # 质量+跨课时去重
+            open(out,"wb").write(b); print(f"✓ {out} <-「{title[:40]}」{w}x{h}")
+            return hashlib.md5(b).hexdigest()[:8]
+        except Exception: continue
+    return None
+```
+
+### M11 交付验证清单（每次必跑）
+
+```python
+# ① zip 完整性: zipfile.ZipFile(out).testzip() is None
+# ② python-pptx 全量遍历无异常
+# ③ rPr 子元素顺序: 正则扫 slide XML, latin→ea→cs→sym 升序, 违规数==0
+# ④ transition 位置: <mc:AlternateContent> 在 </p:cSld> 之后、<p:timing> 之前
+# ⑤ 替换图 srcRect==0 且 blob 比==图框比; 原生未替换图的 srcRect 保留不动
+# ⑥ Morph 覆盖 == 总页数
+# ⑦ 目录 run 色: 序号 FFC000 / 文字 FFFFFF
+# ⑧ 门面图 md5: 两课时互斥 + 与历史课时互斥
+# ⑨ 回归: 分隔页/角标/表格无旧课残留, 导入文案在位, 残留胶囊已删
+```
+
+---
+
+## §4 踩坑精华
+
+- **srcRect 二次裁切变形（2026-08）**：替换图 blob 时不清旧 `a:srcRect`，旧裁剪参数叠加在新图上导致压缩变形 → 替换后必须移除 srcRect 并将 crop_* 归零；原生未替换图的 srcRect 是作者有意设计，保留。
+- **toc 清空时序**：先 `r.text=""` 再找非空 run 会全部判空 → 内容写进单 run 继承序号金色。必须先记录 orig_last_ne 再清空。
+- **rPr 乱序 repair**：ea/cs 直接 append 到尾部会破坏 schema 顺序 → 按 latin 后 addnext 插入；验证必解压查 XML 顺序，不能只看能否打开。
+- **字体验证假阳性**：endParaRPr/defRPr/空 run 残留旧 typeface 属正常（不影响渲染），验证以「非空可见 run」分布为准。
+- **GROUP/表格遗漏**：iter 遍历必须递归 GROUP 与表格单元格，否则节分隔页矩形、目标表格漏统一样式。
+- **zipfile 重写丢条目**：手工重打包 pptx 时所有 zip 条目都要写回（未改动的用原 data），否则 KeyError rIdN；改完 unzip -t 校验。
+- **知识图示不可裁剪**：生物学示意图/实验装置图带标注，禁止套 4:3 裁剪；只有门面图（封面/导入/目录）参与替换。
+- **多课时模板复用**：同节多课时共用模板，封面/导入/目录/目标表格全是上一课时残留 → 按各课时内容分别适配，配图 md5 必须互斥。
+- **Commons 无超宽原图**：横幅位(≈2.84)在该图源常缺真宽幅 → 优先找全景/背景类题材（体育场夜景、图案平铺），次选 crop_anchor=top 保人物主体。
+
+---
+
+## §5 元规则
+
+- **零脚本架构**：本仓库不含也不维护 .py 脚本；所有操作用 §6 模式库内联执行。升级=改本文档的模式代码。
+- 不覆盖老师原件；不提交老师的课件到 git；升级只改 SKILL.md 自身。
+- 提交邮箱：`293544754+Gao-thinking@users.noreply.github.com`。
+
+---
+
+## §7 复盘与自升级（每次调用完成后必做）
+
+1. **收集**：弹窗非推荐项、返工步骤、脚本报错、口头纠正、环境变化
+2. **四原理过滤**：贴近降认知负荷？真实复现 2+ 次（或有机制根因）？更少弹窗等待？最小改动？
+3. **有升级项才弹窗**（全部升级(Recommended)/部分/暂不）→ commit + push，独立 commit 便于 revert
+4. 运行中的问题先修本次输出，规则升级由复盘决定
