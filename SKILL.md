@@ -335,6 +335,8 @@ page_type: cover / section / content / exercise / summary（启发式）
 - **apply_fonts/apply_sizes 曾只处理顶层 shapes**：`iter_runs` 旧实现不递归 GROUP 组合、也不遍历表格，导致组合内标题（节分隔页矩形）与表格文字（学习目标/重难点表）字体/字号未统一，`rPr` 里残留 Times New Roman → 已改 `iter_runs` 递归 GROUP + 表格；**验证字体统一必须解压检查残留 `typeface`（如 Times New Roman），不能只看顶层 shape**。
 - **zipfile 重写必须保留全部条目**：用 `zipfile.ZipFile(f,'w')` 重打包时，若只写入"改动过的"文件而漏掉未改动的（如 slide XML 无变化时未写回），会丢 slide 导致 `python-pptx` 打开报 `KeyError: no relationship with key 'rIdN'` → 所有条目都要写回（改动才换内容，未改动用原 data），写后必须 `unzip -t` 校验包完整性。
 - **教学设计填充位置（2026-08 升级）**：默认原位替换「学习目标/重点难点」页表格文字（`table_replace` items 形式，保 run 级格式），不新增页；仅当课件无这两类页时才兜底在末尾追加教学设计页。
+- **apply_toc 三 run 目录段落（2026-08 修复）**：模板目录段常为 [序号金, 空格金, 内容白] 三 run；旧逻辑把内容写入 runs[1]（金色空格）→ 内容误变金色。已改为定位「最后一个非空 run」写入内容、清空中间 run；验证时逐条核对目录「序号金色/内容白色」。
+- **字体验证假阳性**：apply_fonts 只改非空可见 run 的 latin/ea；endParaRPr / defRPr / 清空后的空 run 中仍会残留旧 typeface（Times New Roman 等），不影响现有文字渲染 → 验证以「非空 run 字体分布」（pptx_analyze 复跑结果）为准，勿用原始 XML typeface 计数判定失败。
 - **配图替换须保持原图框比例**：`replace_images` 已按原图框比例中心裁剪；若原图框比例异常（如横幅 2.6:1），下载素材时优先匹配相近比例（可用 Pexels `w=` 参数或 Wikimedia `iiurlwidth`），避免大幅裁剪丢失主体。
 
 ### A5 元规则

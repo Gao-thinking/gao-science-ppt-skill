@@ -515,16 +515,22 @@ def apply_toc(prs, spec):
             if i < len(paras):
                 p = paras[i]
                 runs = p.runs
-                if runs:
-                    if num and len(runs) >= 2:
-                        runs[0].text = num
-                        runs[1].text = " " + text
-                        for extra in runs[2:]:
-                            extra.text = ""
-                    else:
-                        runs[0].text = (num + " " + text).strip()
-                        for extra in runs[1:]:
-                            extra.text = ""
+                # 定位最后一个非空 run（真正承载内容的 run），
+                # 避免把内容写进中间的空格/装饰 run 而继承序号颜色（如金色）
+                last_ne = -1
+                for j, r in enumerate(runs):
+                    if r.text.strip():
+                        last_ne = j
+                if runs and last_ne >= 1:
+                    runs[0].text = num
+                    for j, r in enumerate(runs):
+                        if j == 0:
+                            continue
+                        r.text = (" " + text) if j == last_ne else ""
+                elif runs:
+                    runs[0].text = (num + " " + text).strip()
+                    for extra in runs[1:]:
+                        extra.text = ""
                 else:
                     para = p
                     if not para.runs:
