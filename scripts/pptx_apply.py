@@ -265,19 +265,36 @@ def apply_replace_images(prs, spec):
                 continue
             pic = pics[n]
             try:
-                # 目标比例 = 原图框比例
+                # 目标比例 = 原图框比例；crop_anchor: 纵向裁剪锚点(top/center/bottom，
+                # 缺省 center；横幅位放人物动作照时用 top 保头部/动作)
+                anchor = rule.get("crop_anchor", "center")
                 target_ratio = (pic.width / pic.height) if pic.height else 1.0
                 im = Image.open(path)
                 im = ImageOps.exif_transpose(im).convert("RGB")
                 w, h = im.size
                 cur_ratio = w / h
+                # 方向失配检查（2026-08 升级）：裁剪后保留面积 <60% 说明源图方向与图框
+                # 差异过大（竖框配横图等），主体损失严重 → 告警建议换同方向源图。
+                if cur_ratio > 0 and target_ratio > 0:
+                    keep = min(target_ratio / cur_ratio, 1.0) if cur_ratio > target_ratio \
+                        else min(cur_ratio / target_ratio, 1.0)
+                    if keep < 0.6:
+                        want = "竖版" if target_ratio < 1 else "横版"
+                        print(f"[warn] 页{slide_idx} 图{n} 源图({w}x{h},比{cur_ratio:.2f})"
+                              f"与图框(比{target_ratio:.2f})方向失配，裁剪仅保留 {keep:.0%}"
+                              f"，建议改用{want}源图")
                 if cur_ratio > target_ratio + 0.01:   # 太宽 → 裁左右
                     nw = int(h * target_ratio)
                     x0 = (w - nw) // 2
                     im = im.crop((x0, 0, x0 + nw, h))
-                elif cur_ratio < target_ratio - 0.01:  # 太高 → 裁上下
+                elif cur_ratio < target_ratio - 0.01:  # 太高 → 裁上下（锚点可选）
                     nh = int(w / target_ratio)
-                    y0 = (h - nh) // 2
+                    if anchor == "top":
+                        y0 = 0
+                    elif anchor == "bottom":
+                        y0 = h - nh
+                    else:
+                        y0 = (h - nh) // 2
                     im = im.crop((0, y0, w, y0 + nh))
                 buf = io.BytesIO()
                 im.save(buf, format="JPEG", quality=88)
